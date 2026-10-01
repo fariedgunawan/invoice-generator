@@ -33,7 +33,7 @@ interface State {
 }
 
 // Helpers
-const r9 = (x: number) => Math.round(x);
+const r9 = (x: number) => Number(x.toFixed(9));
 const f9 = (x: number) => Number(x.toFixed(9));
 const fmt = (v: any) => v === '' || v == null ? '' : typeof v === 'number' ? v.toLocaleString('en-US', { maximumFractionDigits: 9 }) : v;
 
@@ -168,9 +168,9 @@ function calculate(S: State) {
 
   const fin = (o: any) => {
     o.pre = r9(o.one + o.rec + o.dr);
-    o.tax = Math.trunc(o.pre * ppn);
-    o.ded = Math.trunc(o.pre * pph);
-    o.grand = o.pre + o.tax - o.ded;
+    o.tax = f9(o.pre * ppn);
+    o.ded = f9(o.pre * pph);
+    o.grand = f9(o.pre + o.tax - o.ded);
     return o;
   };
 
