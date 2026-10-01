@@ -53,12 +53,9 @@ const AM: AmountType[] = ['Amount', 'Percentage'];
 const FREQ: State['freq'][] = ['Monthly', 'Quarterly', 'Semester', 'Yearly'];
 
 const initialItems: Item[] = [
-  { id: '1', name: 'One-time product A', type: 'One time', price: '1850', bt: 'Amount', bv: '213', qty: '2', ds: '', de: '', at: 'Amount', av: '332', so: '2942' },
-  { id: '2', name: 'One-time product B', type: 'One time', price: '100000', bt: 'Amount', bv: '5555', qty: '2', ds: '', de: '', at: 'Amount', av: '21005', so: '167885' },
-  { id: '3', name: 'Recurring product A', type: 'Recurring', price: '1850', bt: 'Amount', bv: '213', qty: '2', ds: '', de: '', at: 'Amount', av: '370', so: '16000' },
-  { id: '4', name: 'Recurring product B', type: 'Recurring', price: '100000', bt: 'Amount', bv: '9999', qty: '2', ds: '', de: '', at: 'Amount', av: '110251', so: '789759' },
-  { id: '5', name: 'DR product A', type: 'DR (Daily)', price: '1850', bt: 'Amount', bv: '18', qty: '2', ds: '2026-03-25', de: '2026-04-05', at: 'Amount', av: '992', so: '42976' },
-  { id: '6', name: 'DR product B', type: 'DR (Daily)', price: '12345', bt: 'Amount', bv: '345', qty: '2', ds: '2026-03-25', de: '2026-04-05', at: 'Amount', av: '8726', so: '279274' }
+  { id: '1', name: 'sql', type: 'One time', price: '5430000', bt: 'Percentage', bv: '3', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' },
+  { id: '2', name: 'dcloud', type: 'Recurring', price: '876000', bt: 'Percentage', bv: '7', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' },
+  { id: '3', name: 'dblock', type: 'Recurring', price: '2500', bt: 'Percentage', bv: '17', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' }
 ];
 
 function calculate(S: State) {
@@ -226,11 +223,11 @@ const Input = ({ label, children, note }: any) => (
 export default function App() {
   const [state, setState] = useState<State>({
     start: '2026-01-01',
-    end: '2026-05-31',
+    end: '2026-12-31',
     freq: 'Monthly',
     cyc: '20',
     tx: '11',
-    dx: '2',
+    dx: '0',
     xn: '',
     xr: '1',
     items: initialItems,
