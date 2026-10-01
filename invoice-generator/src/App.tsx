@@ -145,18 +145,12 @@ function calculate(S: State) {
             tt = r9(it.tt * p.f / it.dur);
             ad = r9(it.ad * p.f / it.dur);
           }
-        }
-        cT = r9(cT + tt);
-        cA = r9(cA + ad);
-        if (p.last) {
           nt = r9(it.qty ? tt / it.qty : 0);
           pr = it.pct >= 1 ? 0 : r9(nt / (1 - it.pct));
           dc = r9(pr - nt);
-        } else {
-          pr = r9(it.price * p.f);
-          dc = r9(it.bd * p.f);
-          nt = r9(pr - dc);
         }
+        cT = r9(cT + tt);
+        cA = r9(cA + ad);
       } else if ((it.type === 'One time' && k === 0) || (it.type === 'DR (Daily)' && k === targetK)) {
         tt = it.tt;
         ad = it.ad;
@@ -174,9 +168,9 @@ function calculate(S: State) {
 
   const fin = (o: any) => {
     o.pre = r9(o.one + o.rec + o.dr);
-    o.tax = f9(o.pre * ppn);
-    o.ded = f9(o.pre * pph);
-    o.grand = f9(o.pre + o.tax - o.ded);
+    o.tax = Math.trunc(o.pre * ppn);
+    o.ded = Math.trunc(o.pre * pph);
+    o.grand = o.pre + o.tax - o.ded;
     return o;
   };
 
@@ -313,8 +307,6 @@ export default function App() {
       items: state.items.filter((_, i) => i !== index)
     });
   };
-
-
 
   const inputClass = "bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-300 focus:border-gray-300 outline-none transition text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.02)] w-full placeholder-gray-300 hover:border-gray-300";
   const selectClass = "bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-300 focus:border-gray-300 outline-none transition text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.02)] w-full hover:border-gray-300 cursor-pointer";
