@@ -8,7 +8,8 @@ import type {
   AmountType,
   BillingFrequency,
   InvoicePeriod,
-  CalculatedItem
+  CalculatedItem,
+  UnitType
 } from './types';
 import { calculate } from './utils/calculator';
 import { formatDate } from './utils/dateUtils';
@@ -24,14 +25,15 @@ interface TableDisplayRow {
 
 // Opsi pilihan tipe
 const PRODUCT_TYPES: ProductType[] = ['One time', 'Recurring', 'DR (Daily)'];
+const UNIT_TYPES: UnitType[] = ['Unit', 'GB'];
 const AMOUNT_TYPES: AmountType[] = ['Amount', 'Percentage'];
 const BILLING_FREQUENCIES: BillingFrequency[] = ['Monthly', 'Quarterly', 'Semester', 'Yearly'];
 
 // Data dummy awal
 const initialItems: Item[] = [
-  { id: '1', name: 'sql', type: 'One time', price: '5430000', bt: 'Percentage', bv: '3', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' },
-  { id: '2', name: 'dcloud', type: 'Recurring', price: '876000', bt: 'Percentage', bv: '7', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' },
-  { id: '3', name: 'dblock', type: 'Recurring', price: '2500', bt: 'Percentage', bv: '17', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' }
+  { id: '1', name: 'sql', type: 'One time', unit: 'Unit', price: '5430000', bt: 'Percentage', bv: '3', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' },
+  { id: '2', name: 'dcloud', type: 'Recurring', unit: 'Unit', price: '876000', bt: 'Percentage', bv: '7', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' },
+  { id: '3', name: 'dblock', type: 'Recurring', unit: 'GB', price: '2500', bt: 'Percentage', bv: '17', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' }
 ];
 
 export default function App() {
@@ -52,15 +54,6 @@ export default function App() {
 
   // Validasi & pengecekan selisih tambahan pasca-kalkulasi
   const warnings = [...calculation.W];
-
-  calculation.all.forEach((item, i) => {
-    if (item.used && item.so !== '') {
-      const diff = r9(item.gt - (+item.so || 0));
-      if (Math.abs(diff) >= 0.01) {
-        warnings.push(`${item.name || 'Item ' + (i + 1)}: total differs from Grand total in SO by ${fmt(diff)}`);
-      }
-    }
-  });
 
   const targetCurrencySuffix = state.xn ? ` (${state.xn})` : '';
   const exchangeRateMultiplier = +state.xr || 1;
@@ -117,6 +110,9 @@ export default function App() {
     createPeriodInfoRow('Pro-rata factor (days / 30)', p => p.f),
     createFinancialRow('One time total', 'one'),
     createFinancialRow('Recurring total', 'rec'),
+    createFinancialRow('Total basic discount', 'totalBasicDisc', 'text-gray-500 text-xs italic'),
+    createFinancialRow('Recurring basic discount', 'recBasicDisc', 'text-gray-500 text-xs italic'),
+    createFinancialRow('Recurring addt\'l discount', 'recAddlDisc', 'text-gray-500 text-xs italic'),
     createFinancialRow('DR (Daily) total', 'dr'),
     createFinancialRow('Pre-tax total', 'pre', 'font-medium bg-gray-50 border-t border-b border-gray-100'),
     createFinancialRow('Taxes and charges', 'tax'),
@@ -125,7 +121,8 @@ export default function App() {
   ];
 
   // Pengecekan selisih pre-tax & nilai negatif
-  const preTaxDifference = r9(invoiceSummaryRows[7].v[3] as number);
+  const preTaxRow = invoiceSummaryRows.find(row => String(row.v[0]).startsWith('Pre-tax total'));
+  const preTaxDifference = preTaxRow ? r9(preTaxRow.v[3] as number) : 0;
   if (calculation.cols.length && Math.abs(preTaxDifference) >= 0.01) {
     warnings.push('Pre-tax of invoices differs from SO by ' + fmt(preTaxDifference));
   }
@@ -153,6 +150,7 @@ export default function App() {
           id: Math.random().toString(36).slice(2, 9),
           name: '',
           type: 'Recurring',
+          unit: 'Unit',
           price: '',
           bt: 'Amount',
           bv: '',
@@ -294,31 +292,53 @@ export default function App() {
             Products List
           </h2>
 
+          {/* Discounts & Totals Overview */}
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
+              <span className="text-xs text-gray-500 font-medium">Total Basic Discount</span>
+              <div className="text-xl font-semibold font-mono text-gray-900 mt-1">
+                {fmt(calculation.totalBasicDiscount)} {state.xn}
+              </div>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
+              <span className="text-xs text-gray-500 font-medium">Total Basic Discount (Recurring)</span>
+              <div className="text-xl font-semibold font-mono text-gray-900 mt-1">
+                {fmt(calculation.recurringTotalBasicDiscount)} {state.xn}
+              </div>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
+              <span className="text-xs text-gray-500 font-medium">Total Addt'l Discount (Recurring)</span>
+              <div className="text-xl font-semibold font-mono text-gray-900 mt-1">
+                {fmt(calculation.recurringTotalAdditionalDiscount)} {state.xn}
+              </div>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
+              <span className="text-xs text-gray-500 font-medium">Total Recurring Net (SO)</span>
+              <div className="text-xl font-semibold font-mono text-gray-900 mt-1">
+                {fmt(calculation.so.rec)} {state.xn}
+              </div>
+            </div>
+          </div>
+
           <div className="overflow-x-auto border border-gray-200 rounded-xl mb-6 shadow-sm">
             <table className="w-full text-sm text-left whitespace-nowrap">
               <thead className="text-xs text-gray-500 bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3.5 font-medium">Product Name</th>
                   <th className="px-4 py-3.5 font-medium min-w-[130px]">Type</th>
+                  <th className="px-4 py-3.5 font-medium min-w-[90px]">Unit</th>
                   <th className="px-4 py-3.5 font-medium">Price / unit</th>
                   <th className="px-4 py-3.5 font-medium min-w-[170px]">Basic Discount</th>
                   <th className="px-4 py-3.5 font-medium w-24">Qty</th>
                   <th className="px-4 py-3.5 font-medium min-w-[140px]">DR Date Range</th>
                   <th className="px-4 py-3.5 font-medium min-w-[170px]">Addt'l Discount</th>
-                  <th className="px-4 py-3.5 font-medium">SO Grand Total</th>
-                  <th className="px-4 py-3.5 font-medium text-right">Calc. Total</th>
-                  <th className="px-4 py-3.5 font-medium text-center">Status</th>
+                  <th className="px-4 py-3.5 font-medium text-right min-w-[120px]">Calc. Total</th>
                   <th className="px-4 py-3.5"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {state.items.map((item, i) => {
                   const calculated = calculation.all[i];
-                  const hasDiff =
-                    calculated?.used &&
-                    calculated.so !== '' &&
-                    Math.abs(r9(calculated.gt - (+calculated.so || 0))) >= 0.01;
-                  const diffVal = calculated?.used ? r9(calculated.gt - (+calculated.so || 0)) : 0;
 
                   return (
                     <tr key={item.id} className="bg-white hover:bg-gray-50/50 transition-colors group">
@@ -339,6 +359,19 @@ export default function App() {
                           {PRODUCT_TYPES.map(t => (
                             <option key={t} value={t}>
                               {t}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-3">
+                        <select
+                          className={selectClass}
+                          value={item.unit || 'Unit'}
+                          onChange={e => updateItem(i, 'unit', e.target.value as UnitType)}
+                        >
+                          {UNIT_TYPES.map(u => (
+                            <option key={u} value={u}>
+                              {u}
                             </option>
                           ))}
                         </select>
@@ -374,6 +407,11 @@ export default function App() {
                             placeholder={item.bt === 'Percentage' ? '%' : 'Amt'}
                           />
                         </div>
+                        {calculated?.used && (
+                          <div className="text-[11px] text-gray-400 mt-1 font-mono">
+                            Total: {fmt(calculated.totalBasicDiscount)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <input
@@ -422,31 +460,14 @@ export default function App() {
                             placeholder={item.at === 'Percentage' ? '%' : 'Amt'}
                           />
                         </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          className={inputClass}
-                          value={item.so}
-                          onChange={e => updateItem(i, 'so', e.target.value)}
-                        />
+                        {calculated?.used && (
+                          <div className="text-[11px] text-gray-400 mt-1 font-mono">
+                            Total: {fmt(calculated.ad)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right font-mono font-medium text-gray-800">
                         {calculated?.used ? fmt(calculated.gt) : '-'}
-                      </td>
-                      <td className="px-3 py-3 text-center">
-                        {calculated?.used && item.so !== '' && (
-                          hasDiff ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-black text-white px-2.5 py-1 rounded-full whitespace-nowrap">
-                              DIFF {fmt(diffVal)}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-600 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full whitespace-nowrap">
-                              <FiCheckCircle className="text-gray-400" /> OK
-                            </span>
-                          )
-                        )}
                       </td>
                       <td className="px-3 py-3 text-center">
                         <button
@@ -473,7 +494,7 @@ export default function App() {
 
           <p className="mt-6 text-xs text-gray-400 flex gap-2 font-normal">
             <FiInfo className="shrink-0 mt-0.5" />
-            <span>Recurring duration is automatic from start/end. One time = billed in INV 1. DR = price × qty × days. Rows without a price are ignored.</span>
+            <span>Recurring duration is automatic from start/end. One time = billed in INV 1. DR = price × qty × days. Unit GB = unrounded (2 decimal places), Unit non-GB = rounded to integer. Rows without a price are ignored.</span>
           </p>
         </section>
 
@@ -529,11 +550,10 @@ export default function App() {
                       {row.v.map((val, j) => (
                         <td
                           key={j}
-                          className={`px-5 py-3.5 ${
-                            j === 0
+                          className={`px-5 py-3.5 ${j === 0
                               ? 'sticky left-0 bg-white z-10 font-medium text-gray-700'
                               : 'text-right font-mono text-gray-600'
-                          }`}
+                            }`}
                         >
                           {fmt(val)}
                         </td>
@@ -561,6 +581,7 @@ export default function App() {
                 const metricRows: [string, keyof typeof item.rows[0], keyof CalculatedItem][] = [
                   ['Price per unit', 'pr', 'price'],
                   ['Basic discount / unit', 'dc', 'bd'],
+                  ['Total basic discount', 'tbd', 'totalBasicDiscount'],
                   ['Net price per unit', 'nt', 'net'],
                   ['Total after basic', 'tt', 'tt'],
                   ['Additional discount', 'ad', 'ad'],
@@ -569,7 +590,7 @@ export default function App() {
 
                 const productTableRows: TableDisplayRow[] = metricRows.map(([label, metricKey, soKey]) => {
                   const periodValues = getPeriodMetric(metricKey);
-                  const isSummable = ['tt', 'ad', 'gt'].includes(metricKey);
+                  const isSummable = ['tbd', 'tt', 'ad', 'gt'].includes(metricKey);
                   const summed = isSummable
                     ? r9(periodValues.reduce<number>((acc, val) => acc + (+val || 0), 0))
                     : '';
@@ -598,6 +619,8 @@ export default function App() {
                         <span>{item.name || '(No name)'}</span>
                         <span className="w-1 h-1 rounded-full bg-gray-300"></span>
                         <span className="text-sm font-normal text-gray-500">{item.type}</span>
+                        <span className="w-1 h-1 rounded-full bg-gray-300"></span>
+                        <span className="text-sm font-normal text-gray-500">Unit: {item.unit}</span>
                         <span className="w-1 h-1 rounded-full bg-gray-300"></span>
                         <span className="text-sm font-normal text-gray-500">Qty: {item.qty}</span>
                       </span>
@@ -631,11 +654,10 @@ export default function App() {
                               {row.v.map((val, j) => (
                                 <td
                                   key={j}
-                                  className={`px-5 py-2.5 ${
-                                    j === 0
+                                  className={`px-5 py-2.5 ${j === 0
                                       ? 'sticky left-0 bg-white z-10 font-normal text-gray-600'
                                       : 'text-right font-mono text-gray-500'
-                                  }`}
+                                    }`}
                                 >
                                   {fmt(val)}
                                 </td>

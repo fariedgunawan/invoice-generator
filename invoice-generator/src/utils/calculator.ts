@@ -6,7 +6,8 @@ import type {
   CalculatedItem,
   InvoiceFinancialSummary,
   CalculationResult,
-  ProductType
+  ProductType,
+  UnitType
 } from '../types';
 import {
   parseDate,
@@ -16,7 +17,7 @@ import {
   makeNormalizedDate,
   calculateDays360
 } from './dateUtils';
-import { keepPrecision9 } from './formatters';
+import { keepPrecision } from './formatters';
 
 // Map frekuensi billing ke jumlah bulan per invoice
 const MONTHS_PER_INVOICE: Record<string, number> = {
@@ -59,7 +60,7 @@ export function validateAndGetDuration(state: State): DurationValidationResult {
   // Durasi kontrak berlangganan dalam satuan bulan menggunakan metode 30/360
   const recurringDuration = isInvalidDateRange
     ? 0
-    : keepPrecision9(calculateDays360(startDate, endDate) / 30);
+    : keepPrecision(calculateDays360(startDate, endDate) / 30);
 
   return {
     startDate,
@@ -105,7 +106,7 @@ export function generateBillingPeriods(
 
     const periodEnd = serialToDate(Math.min(dateToSerial(endDate), dateToSerial(nextCutoff) - 1));
     const periodDays = calculateDays360(periodStart, periodEnd);
-    const proRataFactor = keepPrecision9(periodDays / 30);
+    const proRataFactor = keepPrecision(periodDays / 30);
     const isLastPeriod = dateToSerial(periodEnd) === dateToSerial(endDate);
 
     periods.push({
@@ -134,13 +135,20 @@ export function calculateItemBaseMetrics(
   recurringDuration: number
 ): CalculatedItem {
   const isUsed = rawItem.price !== '';
+  const itemUnit: UnitType = rawItem.unit || 'Unit';
+  const isGb = (itemUnit || '').trim().toLowerCase() === 'gb';
+  // Jika GB maka tidak di-rounding (presisi 2 angka di belakang koma), selain GB di-rounding bulat (Math.round)
+  const roundItem = (val: number): number => (isGb ? keepPrecision(val) : Math.round(val));
+
   const baseItem: CalculatedItem = {
     id: rawItem.id,
     name: rawItem.name,
     type: rawItem.type,
+    unit: itemUnit,
     price: 0,
     qty: 0,
     bd: 0,
+    totalBasicDiscount: 0,
     net: 0,
     dur: 0,
     tt: 0,
@@ -157,7 +165,7 @@ export function calculateItemBaseMetrics(
 
   if (!isUsed) return baseItem;
 
-  const price = keepPrecision9(+rawItem.price || 0);
+  const price = roundItem(+rawItem.price || 0);
   const qty = +rawItem.qty || 0;
   const basicDiscVal = +rawItem.bv || 0;
   const addlDiscVal = +rawItem.av || 0;
@@ -173,11 +181,11 @@ export function calculateItemBaseMetrics(
 
   // 1. Basic Discount per unit
   const basicDiscount = isBasicPercentage
-    ? keepPrecision9((price * basicDiscVal) / 100)
-    : keepPrecision9(basicDiscVal);
+    ? roundItem((price * basicDiscVal) / 100)
+    : roundItem(basicDiscVal);
 
   // 2. Net Price per unit
-  const netPrice = keepPrecision9(price - basicDiscount);
+  const netPrice = roundItem(price - basicDiscount);
 
   // 3. Durasi pengali (bulan untuk recurring, 1 untuk one-time, hari untuk DR)
   const duration = rawItem.type === 'Recurring'
@@ -186,16 +194,21 @@ export function calculateItemBaseMetrics(
     ? 1
     : drDays;
 
-  // 4. Total setelah basic discount (Net × Qty × Durasi)
-  const totalAfterBasic = keepPrecision9(netPrice * qty * duration);
+  // Total Basic Discount untuk seluruh durasi kontrak
+  const totalBasicDiscount = roundItem(basicDiscount * qty * duration);
 
-  // 5. Additional Discount
-  const additionalDiscount = rawItem.at === 'Percentage'
-    ? keepPrecision9((totalAfterBasic * addlDiscVal) / 100)
-    : keepPrecision9(addlDiscVal);
+  // 4. Total setelah basic discount (Net × Qty × Durasi, selalu di-rounding bulat)
+  const totalAfterBasic = Math.round(netPrice * qty * duration);
 
-  // 6. Grand Total item
-  const grandTotal = keepPrecision9(totalAfterBasic - additionalDiscount);
+  // 5. Additional Discount (selalu di-rounding bulat)
+  const additionalDiscount = Math.round(
+    rawItem.at === 'Percentage'
+      ? (totalAfterBasic * addlDiscVal) / 100
+      : addlDiscVal
+  );
+
+  // 6. Grand Total item (selalu di-rounding bulat)
+  const grandTotal = Math.round(totalAfterBasic - additionalDiscount);
 
   // 7. Rasio diskon dasar (untuk merekonstruksi harga unit pada periode prorata)
   const discountRatio = isBasicPercentage
@@ -209,6 +222,7 @@ export function calculateItemBaseMetrics(
     price,
     qty,
     bd: basicDiscount,
+    totalBasicDiscount,
     net: netPrice,
     dur: duration,
     tt: totalAfterBasic,
@@ -228,7 +242,13 @@ export function allocateItemToPeriods(
   item.rows = [];
   let cumulativeTotalAfterBasic = 0;
   let cumulativeAdditionalDiscount = 0;
+  let cumulativeBasicDiscount = 0;
+  let cumulativeGrandTotal = 0;
   let drTargetInvoiceIndex = 0;
+
+  const isGb = (item.unit || '').trim().toLowerCase() === 'gb';
+  // Jika GB maka tidak di-rounding (presisi 2 angka di belakang koma), selain GB di-rounding bulat (Math.round)
+  const roundItem = (val: number): number => (isGb ? keepPrecision(val) : Math.round(val));
 
   // Untuk DR: cari invoice yang mencakup tanggal mulai DR
   if (item.type === 'DR (Daily)' && item.ds) {
@@ -244,28 +264,36 @@ export function allocateItemToPeriods(
   periods.forEach((period, k) => {
     let periodTotalAfterBasic = 0;
     let periodAdditionalDiscount = 0;
+    let periodTotalBasicDiscount = 0;
     let periodUnitPrice: number | '' = '';
     let periodBasicDiscount: number | '' = '';
     let periodNetPrice: number | '' = '';
+    let periodGrandTotal = 0;
 
     if (item.type === 'Recurring') {
       if (item.dur) {
         if (period.last) {
           // Periode terakhir menyerap sisa agar total invoice sama persis dengan total kontrak
-          periodTotalAfterBasic = keepPrecision9(item.tt - cumulativeTotalAfterBasic);
-          periodAdditionalDiscount = keepPrecision9(item.ad - cumulativeAdditionalDiscount);
+          periodTotalAfterBasic = item.tt - cumulativeTotalAfterBasic;
+          periodAdditionalDiscount = item.ad - cumulativeAdditionalDiscount;
+          periodTotalBasicDiscount = roundItem(item.totalBasicDiscount - cumulativeBasicDiscount);
+          periodGrandTotal = item.gt - cumulativeGrandTotal;
         } else {
           // Prorata berdasarkan rasio bulan periode terhadap total durasi
-          periodTotalAfterBasic = keepPrecision9((item.tt * period.f) / item.dur);
-          periodAdditionalDiscount = keepPrecision9((item.ad * period.f) / item.dur);
+          periodTotalAfterBasic = Math.round((item.tt * period.f) / item.dur);
+          periodAdditionalDiscount = Math.round((item.ad * period.f) / item.dur);
+          periodTotalBasicDiscount = roundItem((item.totalBasicDiscount * period.f) / item.dur);
+          periodGrandTotal = Math.round(periodTotalAfterBasic - periodAdditionalDiscount);
         }
 
-        periodNetPrice = keepPrecision9(item.qty ? periodTotalAfterBasic / item.qty : 0);
-        periodUnitPrice = item.pct >= 1 ? 0 : keepPrecision9(periodNetPrice / (1 - item.pct));
-        periodBasicDiscount = keepPrecision9(periodUnitPrice - periodNetPrice);
+        periodNetPrice = roundItem(item.qty ? periodTotalAfterBasic / item.qty : 0);
+        periodUnitPrice = item.pct >= 1 ? 0 : roundItem(periodNetPrice / (1 - item.pct));
+        periodBasicDiscount = roundItem(periodUnitPrice - periodNetPrice);
       }
-      cumulativeTotalAfterBasic = keepPrecision9(cumulativeTotalAfterBasic + periodTotalAfterBasic);
-      cumulativeAdditionalDiscount = keepPrecision9(cumulativeAdditionalDiscount + periodAdditionalDiscount);
+      cumulativeTotalAfterBasic += periodTotalAfterBasic;
+      cumulativeAdditionalDiscount += periodAdditionalDiscount;
+      cumulativeBasicDiscount = roundItem(cumulativeBasicDiscount + periodTotalBasicDiscount);
+      cumulativeGrandTotal += periodGrandTotal;
     } else if (
       (item.type === 'One time' && k === 0) ||
       (item.type === 'DR (Daily)' && k === drTargetInvoiceIndex)
@@ -273,17 +301,18 @@ export function allocateItemToPeriods(
       // One-time ditagihkan penuh di INV 1; DR ditagihkan penuh di invoice periode mulainya
       periodTotalAfterBasic = item.tt;
       periodAdditionalDiscount = item.ad;
+      periodTotalBasicDiscount = item.totalBasicDiscount;
       periodUnitPrice = item.price;
       periodBasicDiscount = item.bd;
       periodNetPrice = item.net;
+      periodGrandTotal = item.gt;
     }
-
-    const periodGrandTotal = keepPrecision9(periodTotalAfterBasic - periodAdditionalDiscount);
 
     item.rows.push({
       pr: periodUnitPrice,
       dc: periodBasicDiscount,
       nt: periodNetPrice,
+      tbd: periodTotalBasicDiscount,
       tt: periodTotalAfterBasic,
       ad: periodAdditionalDiscount,
       gt: periodGrandTotal
@@ -301,7 +330,7 @@ export function calculateInvoiceSummaries(
   deductedTaxPercent: string
 ): { soSummary: InvoiceFinancialSummary; invoiceColumns: InvoiceFinancialSummary[] } {
   const sumByType = (type: ProductType, selector: (it: CalculatedItem) => number): number => {
-    return keepPrecision9(
+    return keepPrecision(
       activeItems.filter(i => i.type === type).reduce((acc, i) => acc + selector(i), 0)
     );
   };
@@ -309,21 +338,43 @@ export function calculateInvoiceSummaries(
   const taxRate = (+taxPercent || 0) / 100;
   const deductedTaxRate = (+deductedTaxPercent || 0) / 100;
 
+  // Jika terdapat item bertipe GB, summary mempertahankan presisi 2 desimal. Jika semua non-GB, dibulatkan integer.
+  const hasAnyGb = activeItems.some(item => (item.unit || '').trim().toLowerCase() === 'gb');
+  const roundSummary = (val: number): number => (hasAnyGb ? keepPrecision(val) : Math.round(val));
+
+  const sumRecurring = (selector: (it: CalculatedItem) => number): number => {
+    return roundSummary(
+      activeItems.filter(i => i.type === 'Recurring').reduce((acc, i) => acc + selector(i), 0)
+    );
+  };
+
+  const sumAll = (selector: (it: CalculatedItem) => number): number => {
+    return roundSummary(
+      activeItems.reduce((acc, i) => acc + selector(i), 0)
+    );
+  };
+
   // Fungsi helper untuk menghitung Pre-tax, Pajak, Potongan Pajak, dan Grand Total
   const buildFinancialSummary = (subtotals: {
     one: number;
     rec: number;
     dr: number;
+    totalBasicDisc: number;
+    recBasicDisc: number;
+    recAddlDisc: number;
   }): InvoiceFinancialSummary => {
-    const preTax = keepPrecision9(subtotals.one + subtotals.rec + subtotals.dr);
-    const tax = keepPrecision9(preTax * taxRate);
-    const deductedTax = keepPrecision9(preTax * deductedTaxRate);
-    const grandTotal = keepPrecision9(preTax + tax - deductedTax);
+    const preTax = roundSummary(subtotals.one + subtotals.rec + subtotals.dr);
+    const tax = roundSummary(preTax * taxRate);
+    const deductedTax = roundSummary(preTax * deductedTaxRate);
+    const grandTotal = Math.round(preTax + tax - deductedTax);
 
     return {
       one: subtotals.one,
       rec: subtotals.rec,
       dr: subtotals.dr,
+      totalBasicDisc: subtotals.totalBasicDisc,
+      recBasicDisc: subtotals.recBasicDisc,
+      recAddlDisc: subtotals.recAddlDisc,
       pre: preTax,
       tax,
       ded: deductedTax,
@@ -335,7 +386,10 @@ export function calculateInvoiceSummaries(
   const soSummary = buildFinancialSummary({
     one: sumByType('One time', i => i.gt),
     rec: sumByType('Recurring', i => i.gt),
-    dr: sumByType('DR (Daily)', i => i.gt)
+    dr: sumByType('DR (Daily)', i => i.gt),
+    totalBasicDisc: sumAll(i => i.totalBasicDiscount),
+    recBasicDisc: sumRecurring(i => i.totalBasicDiscount),
+    recAddlDisc: sumRecurring(i => i.ad)
   });
 
   // Ringkasan Finansial untuk Masing-Masing Kolom Invoice
@@ -343,7 +397,10 @@ export function calculateInvoiceSummaries(
     ...buildFinancialSummary({
       one: sumByType('One time', i => i.rows[k].gt),
       rec: sumByType('Recurring', i => i.rows[k].gt),
-      dr: sumByType('DR (Daily)', i => i.rows[k].gt)
+      dr: sumByType('DR (Daily)', i => i.rows[k].gt),
+      totalBasicDisc: sumAll(i => +i.rows[k].tbd || 0),
+      recBasicDisc: sumRecurring(i => +i.rows[k].tbd || 0),
+      recAddlDisc: sumRecurring(i => +i.rows[k].ad || 0)
     }),
     label: `INV ${k + 1}`,
     p: period
@@ -406,6 +463,23 @@ export function calculate(state: State): CalculationResult {
     state.dx
   );
 
+  // Total diskon dasar seluruh produk (semua tipe)
+  const totalBasicDiscount = keepPrecision(
+    activeItems.reduce((acc, item) => acc + item.totalBasicDiscount, 0)
+  );
+
+  // Total diskon dasar dan tambahan seluruh produk recurring
+  const recurringTotalBasicDiscount = keepPrecision(
+    activeItems
+      .filter(item => item.type === 'Recurring')
+      .reduce((acc, item) => acc + item.totalBasicDiscount, 0)
+  );
+  const recurringTotalAdditionalDiscount = Math.round(
+    activeItems
+      .filter(item => item.type === 'Recurring')
+      .reduce((acc, item) => acc + item.ad, 0)
+  );
+
   return {
     W: warnings,
     dur: recurringDuration,
@@ -414,6 +488,9 @@ export function calculate(state: State): CalculationResult {
     all: allItems,
     its: activeItems,
     so: soSummary,
-    cols: invoiceColumns
+    cols: invoiceColumns,
+    totalBasicDiscount,
+    recurringTotalBasicDiscount,
+    recurringTotalAdditionalDiscount
   };
 }

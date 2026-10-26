@@ -3,6 +3,7 @@
 export type ProductType = 'One time' | 'Recurring' | 'DR (Daily)';
 export type AmountType = 'Amount' | 'Percentage';
 export type BillingFrequency = 'Monthly' | 'Quarterly' | 'Semester' | 'Yearly';
+export type UnitType = 'Unit' | 'GB';
 
 /**
  * Single product item input in the form
@@ -11,6 +12,7 @@ export interface Item {
   id: string;
   name: string;
   type: ProductType;
+  unit: UnitType; // Unit type ('Unit' | 'GB'). Jika GB maka desimal tidak di-round, selain GB di-round.
   price: string;
   bt: AmountType; // Basic discount type ('Amount' | 'Percentage')
   bv: string;     // Basic discount value
@@ -64,6 +66,7 @@ export interface CalculatedItemRow {
   pr: number | ''; // Unit price in this period
   dc: number | ''; // Basic discount per unit in this period
   nt: number | ''; // Net price per unit in this period
+  tbd: number;     // Total basic discount in this period
   tt: number;      // Total after basic discount in this period
   ad: number;      // Additional discount in this period
   gt: number;      // Item grand total in this period (tt - ad)
@@ -76,9 +79,11 @@ export interface CalculatedItem {
   id?: string;
   name: string;
   type: ProductType;
+  unit: UnitType;
   price: number;   // Unit base price
   qty: number;     // Quantity
   bd: number;      // Basic discount amount per unit
+  totalBasicDiscount: number; // Total basic discount for full contract duration (bd * qty * dur)
   net: number;     // Net price per unit (price - bd)
   dur: number;     // Duration (months for recurring, 1 for one-time, days for DR)
   tt: number;      // Total after basic discount (net * qty * dur)
@@ -100,6 +105,9 @@ export interface InvoiceFinancialSummary {
   one: number;             // One-time total
   rec: number;             // Recurring total
   dr: number;              // DR (Daily) total
+  totalBasicDisc: number;  // Total basic discount across all products
+  recBasicDisc: number;    // Recurring total basic discount
+  recAddlDisc: number;     // Recurring total additional discount
   pre: number;             // Pre-tax subtotal (one + rec + dr)
   tax: number;             // Taxes & charges
   ded: number;             // Deducted taxes
@@ -121,4 +129,7 @@ export interface CalculationResult {
   its: CalculatedItem[];               // Active product items (with price specified)
   so: InvoiceFinancialSummary;         // Expected Sales Order totals
   cols: InvoiceFinancialSummary[];     // Generated invoice breakdown columns
+  totalBasicDiscount: number;          // Total basic discount across all products
+  recurringTotalBasicDiscount: number;     // Total basic discount across all recurring products
+  recurringTotalAdditionalDiscount: number; // Total additional discount across all recurring products
 }
