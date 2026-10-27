@@ -82,11 +82,15 @@ export interface CalculatedItem {
   unit: UnitType;
   price: number;   // Unit base price
   qty: number;     // Quantity
+  bt: AmountType;  // Basic discount type ('Amount' | 'Percentage')
+  bv: number;      // Basic discount raw value
   bd: number;      // Basic discount amount per unit
   totalBasicDiscount: number; // Total basic discount for full contract duration (bd * qty * dur)
   net: number;     // Net price per unit (price - bd)
   dur: number;     // Duration (months for recurring, 1 for one-time, days for DR)
-  tt: number;      // Total after basic discount (net * qty * dur)
+  tt: number;      // Total after basic discount ((price - bd) * qty * dur)
+  at: AmountType;  // Additional discount type ('Amount' | 'Percentage')
+  av: number;      // Additional discount raw value
   ad: number;      // Additional discount amount
   gt: number;      // Item Grand Total (tt - ad)
   pct: number;     // Basic discount percentage ratio
@@ -107,6 +111,7 @@ export interface InvoiceFinancialSummary {
   dr: number;              // DR (Daily) total
   totalBasicDisc: number;  // Total basic discount across all products
   recBasicDisc: number;    // Recurring total basic discount
+  oneBasicDisc: number;    // One-time total basic discount
   recAddlDisc: number;     // Recurring total additional discount
   pre: number;             // Pre-tax subtotal (one + rec + dr)
   tax: number;             // Taxes & charges
@@ -131,5 +136,6 @@ export interface CalculationResult {
   cols: InvoiceFinancialSummary[];     // Generated invoice breakdown columns
   totalBasicDiscount: number;          // Total basic discount across all products
   recurringTotalBasicDiscount: number;     // Total basic discount across all recurring products
+  oneTimeTotalBasicDiscount: number;       // Total basic discount across all one-time products
   recurringTotalAdditionalDiscount: number; // Total additional discount across all recurring products
 }

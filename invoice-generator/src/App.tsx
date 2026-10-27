@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { FiPlus, FiTrash2, FiInfo, FiAlertCircle, FiCheckCircle } from 'react-icons/fi';
+import { FiPlus, FiTrash2, FiInfo, FiAlertCircle, FiCheckCircle, FiActivity } from 'react-icons/fi';
 
 import type {
   Item,
@@ -13,9 +13,10 @@ import type {
 } from './types';
 import { calculate } from './utils/calculator';
 import { formatDate } from './utils/dateUtils';
-import { fmt, r9 } from './utils/formatters';
+import { fmt, fmt9, r9 } from './utils/formatters';
 import { DateInput } from './components/DateInput';
 import { FormInput } from './components/FormInput';
+import { CalculationTrace } from './components/CalculationTrace';
 
 interface TableDisplayRow {
   c?: string;
@@ -29,21 +30,23 @@ const UNIT_TYPES: UnitType[] = ['Unit', 'GB'];
 const AMOUNT_TYPES: AmountType[] = ['Amount', 'Percentage'];
 const BILLING_FREQUENCIES: BillingFrequency[] = ['Monthly', 'Quarterly', 'Semester', 'Yearly'];
 
-// Data dummy awal
+// Data dummy awal sesuai test case
 const initialItems: Item[] = [
-  { id: '1', name: 'sql', type: 'One time', unit: 'Unit', price: '5430000', bt: 'Percentage', bv: '3', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' },
-  { id: '2', name: 'dcloud', type: 'Recurring', unit: 'Unit', price: '876000', bt: 'Percentage', bv: '7', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' },
-  { id: '3', name: 'dblock', type: 'Recurring', unit: 'GB', price: '2500', bt: 'Percentage', bv: '17', qty: '1', ds: '', de: '', at: 'Amount', av: '', so: '' }
+  { id: '1', name: 'test 1', type: 'One time', unit: 'Unit', price: '123125', bt: 'Percentage', bv: '23.13', qty: '2', ds: '', de: '', at: 'Percentage', av: '12.51', so: '' },
+  { id: '2', name: 'test gb one', type: 'One time', unit: 'GB', price: '1259.49', bt: 'Percentage', bv: '11.57', qty: '157', ds: '', de: '', at: 'Percentage', av: '10.11', so: '' },
+  { id: '3', name: 'test 2', type: 'Recurring', unit: 'Unit', price: '100557', bt: 'Amount', bv: '1107', qty: '2', ds: '', de: '', at: 'Percentage', av: '15.13', so: '' },
+  { id: '4', name: 'test gb recu', type: 'Recurring', unit: 'GB', price: '1827.77', bt: 'Amount', bv: '123.57', qty: '1087', ds: '', de: '', at: 'Percentage', av: '12.12', so: '' }
 ];
 
 export default function App() {
+  const [currentPage, setCurrentPage] = useState<'generator' | 'trace'>('generator');
   const [state, setState] = useState<State>({
     start: '2026-01-01',
-    end: '2026-12-31',
+    end: '2026-04-30',
     freq: 'Monthly',
     cyc: '20',
     tx: '11',
-    dx: '0',
+    dx: '2',
     xn: '',
     xr: '1',
     items: initialItems,
@@ -109,6 +112,7 @@ export default function App() {
     createPeriodInfoRow('Days (30/360)', p => p.days),
     createPeriodInfoRow('Pro-rata factor (days / 30)', p => p.f),
     createFinancialRow('One time total', 'one'),
+    createFinancialRow('One time basic discount', 'oneBasicDisc', 'text-gray-500 text-xs italic'),
     createFinancialRow('Recurring total', 'rec'),
     createFinancialRow('Total basic discount', 'totalBasicDisc', 'text-gray-500 text-xs italic'),
     createFinancialRow('Recurring basic discount', 'recBasicDisc', 'text-gray-500 text-xs italic'),
@@ -177,6 +181,16 @@ export default function App() {
   const selectClass =
     'bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-300 focus:border-gray-300 outline-none transition text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.02)] w-full hover:border-gray-300 cursor-pointer';
 
+  if (currentPage === 'trace') {
+    return (
+      <CalculationTrace
+        state={state}
+        calculation={calculation}
+        onBack={() => setCurrentPage('generator')}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50/50 p-4 md:p-8 font-sans text-gray-900 selection:bg-gray-200">
       <div className="max-w-[1400px] mx-auto space-y-8">
@@ -190,6 +204,16 @@ export default function App() {
               <FiInfo className="shrink-0" />
               <span>Generate schedules from Sales Orders for One-time, Recurring, and DR products.</span>
             </p>
+          </div>
+          <div className="flex items-center gap-2 self-center md:self-auto">
+            <button
+              onClick={() => setCurrentPage('trace')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-xs transition-all cursor-pointer"
+            >
+              <FiActivity size={16} className="text-indigo-600" />
+              <span>Visual Trace Perhitungan</span>
+              <span className="px-1.5 py-0.5 rounded-md bg-indigo-200 text-indigo-900 text-[10px] font-bold">Baru</span>
+            </button>
           </div>
         </header>
 
@@ -293,11 +317,17 @@ export default function App() {
           </h2>
 
           {/* Discounts & Totals Overview */}
-          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
               <span className="text-xs text-gray-500 font-medium">Total Basic Discount</span>
               <div className="text-xl font-semibold font-mono text-gray-900 mt-1">
                 {fmt(calculation.totalBasicDiscount)} {state.xn}
+              </div>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
+              <span className="text-xs text-gray-500 font-medium">Total Basic Discount (One Time)</span>
+              <div className="text-xl font-semibold font-mono text-gray-900 mt-1">
+                {fmt(calculation.oneTimeTotalBasicDiscount)} {state.xn}
               </div>
             </div>
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -500,12 +530,21 @@ export default function App() {
 
         {/* 3. Invoices Breakdown */}
         <section className="bg-white border border-gray-200 rounded-2xl p-6 md:p-8 shadow-[0_2px_8px_rgba(0,0,0,0.04)] mb-10">
-          <h2 className="text-lg font-medium mb-6 text-gray-800 flex items-center gap-3">
-            <span className="bg-gray-100 text-gray-600 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold border border-gray-200">
-              3
-            </span>
-            Invoices Breakdown
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <h2 className="text-lg font-medium text-gray-800 flex items-center gap-3">
+              <span className="bg-gray-100 text-gray-600 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold border border-gray-200">
+                3
+              </span>
+              Invoices Breakdown
+            </h2>
+            <button
+              onClick={() => setCurrentPage('trace')}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer"
+            >
+              <FiActivity size={14} className="text-indigo-600" />
+              <span>Lihat Visual Trace Rumus</span>
+            </button>
+          </div>
 
           {warnings.length > 0 ? (
             <div className="mb-8 bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -545,21 +584,24 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {invoiceSummaryRows.map((row, i) => (
-                    <tr key={i} className={`hover:bg-gray-50/50 transition-colors ${row.c || ''}`}>
-                      {row.v.map((val, j) => (
-                        <td
-                          key={j}
-                          className={`px-5 py-3.5 ${j === 0
-                              ? 'sticky left-0 bg-white z-10 font-medium text-gray-700'
-                              : 'text-right font-mono text-gray-600'
-                            }`}
-                        >
-                          {fmt(val)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {invoiceSummaryRows.map((row, i) => {
+                    const isFactorRow = String(row.v[0]).includes('Pro-rata factor');
+                    return (
+                      <tr key={i} className={`hover:bg-gray-50/50 transition-colors ${row.c || ''}`}>
+                        {row.v.map((val, j) => (
+                          <td
+                            key={j}
+                            className={`px-5 py-3.5 ${j === 0
+                                ? 'sticky left-0 bg-white z-10 font-medium text-gray-700'
+                                : 'text-right font-mono text-gray-600'
+                              }`}
+                          >
+                            {isFactorRow && typeof val === 'number' ? fmt9(val) : fmt(val)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
