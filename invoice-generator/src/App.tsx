@@ -112,11 +112,9 @@ export default function App() {
     createPeriodInfoRow('Days (30/360)', p => p.days),
     createPeriodInfoRow('Pro-rata factor (days / 30)', p => p.f),
     createFinancialRow('One time total', 'one'),
-    createFinancialRow('One time basic discount', 'oneBasicDisc', 'text-gray-500 text-xs italic'),
     createFinancialRow('Recurring total', 'rec'),
     createFinancialRow('Total basic discount', 'totalBasicDisc', 'text-gray-500 text-xs italic'),
-    createFinancialRow('Recurring basic discount', 'recBasicDisc', 'text-gray-500 text-xs italic'),
-    createFinancialRow('Recurring addt\'l discount', 'recAddlDisc', 'text-gray-500 text-xs italic'),
+    createFinancialRow('Total additional discount', 'totalAddlDisc', 'text-gray-500 text-xs italic'),
     createFinancialRow('DR (Daily) total', 'dr'),
     createFinancialRow('Pre-tax total', 'pre', 'font-medium bg-gray-50 border-t border-b border-gray-100'),
     createFinancialRow('Taxes and charges', 'tax'),
@@ -317,7 +315,7 @@ export default function App() {
           </h2>
 
           {/* Discounts & Totals Overview */}
-          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
               <span className="text-xs text-gray-500 font-medium">Total Basic Discount</span>
               <div className="text-xl font-semibold font-mono text-gray-900 mt-1">
@@ -325,21 +323,9 @@ export default function App() {
               </div>
             </div>
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
-              <span className="text-xs text-gray-500 font-medium">Total Basic Discount (One Time)</span>
+              <span className="text-xs text-gray-500 font-medium">Total Additional Discount</span>
               <div className="text-xl font-semibold font-mono text-gray-900 mt-1">
-                {fmt(calculation.oneTimeTotalBasicDiscount)} {state.xn}
-              </div>
-            </div>
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
-              <span className="text-xs text-gray-500 font-medium">Total Basic Discount (Recurring)</span>
-              <div className="text-xl font-semibold font-mono text-gray-900 mt-1">
-                {fmt(calculation.recurringTotalBasicDiscount)} {state.xn}
-              </div>
-            </div>
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
-              <span className="text-xs text-gray-500 font-medium">Total Addt'l Discount (Recurring)</span>
-              <div className="text-xl font-semibold font-mono text-gray-900 mt-1">
-                {fmt(calculation.recurringTotalAdditionalDiscount)} {state.xn}
+                {fmt(calculation.so.totalAddlDisc)} {state.xn}
               </div>
             </div>
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">

@@ -110,9 +110,7 @@ export interface InvoiceFinancialSummary {
   rec: number;             // Recurring total
   dr: number;              // DR (Daily) total
   totalBasicDisc: number;  // Total basic discount across all products
-  recBasicDisc: number;    // Recurring total basic discount
-  oneBasicDisc: number;    // One-time total basic discount
-  recAddlDisc: number;     // Recurring total additional discount
+  totalAddlDisc: number;   // Total additional discount across all products
   pre: number;             // Pre-tax subtotal (one + rec + dr)
   tax: number;             // Taxes & charges
   ded: number;             // Deducted taxes
@@ -135,7 +133,4 @@ export interface CalculationResult {
   so: InvoiceFinancialSummary;         // Expected Sales Order totals
   cols: InvoiceFinancialSummary[];     // Generated invoice breakdown columns
   totalBasicDiscount: number;          // Total basic discount across all products
-  recurringTotalBasicDiscount: number;     // Total basic discount across all recurring products
-  oneTimeTotalBasicDiscount: number;       // Total basic discount across all one-time products
-  recurringTotalAdditionalDiscount: number; // Total additional discount across all recurring products
 }

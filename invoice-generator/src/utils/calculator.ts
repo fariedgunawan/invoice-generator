@@ -358,18 +358,6 @@ export function calculateInvoiceSummaries(
   const hasAnyGb = activeItems.some(item => (item.unit || '').trim().toLowerCase() === 'gb');
   const roundSummary = (val: number): number => (hasAnyGb ? keepPrecision(val) : Math.round(val));
 
-  const sumRecurring = (selector: (it: CalculatedItem) => number): number => {
-    return roundSummary(
-      activeItems.filter(i => i.type === 'Recurring').reduce((acc, i) => acc + selector(i), 0)
-    );
-  };
-
-  const sumOneTime = (selector: (it: CalculatedItem) => number): number => {
-    return roundSummary(
-      activeItems.filter(i => i.type === 'One time').reduce((acc, i) => acc + selector(i), 0)
-    );
-  };
-
   const sumAll = (selector: (it: CalculatedItem) => number): number => {
     return roundSummary(
       activeItems.reduce((acc, i) => acc + selector(i), 0)
@@ -391,9 +379,7 @@ export function calculateInvoiceSummaries(
     rec: soRec,
     dr: soDr,
     totalBasicDisc: sumAll(i => i.totalBasicDiscount),
-    recBasicDisc: sumRecurring(i => i.totalBasicDiscount),
-    oneBasicDisc: sumOneTime(i => i.totalBasicDiscount),
-    recAddlDisc: sumRecurring(i => i.ad),
+    totalAddlDisc: sumAll(i => i.ad),
     pre: soPreTax,
     tax: soTax,
     ded: soDeductedTax,
@@ -401,28 +387,17 @@ export function calculateInvoiceSummaries(
   };
 
   // Ringkasan Finansial untuk Masing-Masing Kolom Invoice
-  let cumulativeTax = 0;
-  let cumulativeDed = 0;
-
   const invoiceColumns: InvoiceFinancialSummary[] = periods.map((period, k) => {
-    const isLast = k === periods.length - 1;
     const colOne = sumByType('One time', i => i.rows[k].gt);
     const colRec = sumByType('Recurring', i => i.rows[k].gt);
     const colDr = sumByType('DR (Daily)', i => i.rows[k].gt);
     const colPreTax = roundSummary(colOne + colRec + colDr);
 
-    // Pajak dan potongan pajak dibulatkan bulat (Math.round).
-    // Periode terakhir menyerap sisa rounding agar akumulasi seluruh invoice tepat sama dengan SO target.
-    let colTax = Math.round(colPreTax * taxRate);
-    let colDeductedTax = Math.round(colPreTax * deductedTaxRate);
-
-    if (isLast && periods.length > 0) {
-      colTax = soSummary.tax - cumulativeTax;
-      colDeductedTax = soSummary.ded - cumulativeDed;
-    } else {
-      cumulativeTax += colTax;
-      cumulativeDed += colDeductedTax;
-    }
+    // Pajak dan potongan pajak tiap invoice dibulatkan murni (Math.round) dari pre-tax invoice tersebut.
+    // Tidak ada penyerapan selisih: jika jumlah pajak seluruh invoice berbeda dengan pajak SO
+    // (akibat pembulatan per invoice), selisihnya ditampilkan apa adanya pada kolom Difference.
+    const colTax = Math.round(colPreTax * taxRate);
+    const colDeductedTax = Math.round(colPreTax * deductedTaxRate);
 
     const colGrandTotal = Math.round(colPreTax + colTax - colDeductedTax);
 
@@ -431,9 +406,7 @@ export function calculateInvoiceSummaries(
       rec: colRec,
       dr: colDr,
       totalBasicDisc: sumAll(i => +i.rows[k].tbd || 0),
-      recBasicDisc: sumRecurring(i => +i.rows[k].tbd || 0),
-      oneBasicDisc: sumOneTime(i => +i.rows[k].tbd || 0),
-      recAddlDisc: sumRecurring(i => +i.rows[k].ad || 0),
+      totalAddlDisc: sumAll(i => +i.rows[k].ad || 0),
       pre: colPreTax,
       tax: colTax,
       ded: colDeductedTax,
@@ -505,25 +478,6 @@ export function calculate(state: State): CalculationResult {
     activeItems.reduce((acc, item) => acc + item.totalBasicDiscount, 0)
   );
 
-  // Total diskon dasar seluruh produk one-time
-  const oneTimeTotalBasicDiscount = keepPrecision(
-    activeItems
-      .filter(item => item.type === 'One time')
-      .reduce((acc, item) => acc + item.totalBasicDiscount, 0)
-  );
-
-  // Total diskon dasar dan tambahan seluruh produk recurring
-  const recurringTotalBasicDiscount = keepPrecision(
-    activeItems
-      .filter(item => item.type === 'Recurring')
-      .reduce((acc, item) => acc + item.totalBasicDiscount, 0)
-  );
-  const recurringTotalAdditionalDiscount = Math.round(
-    activeItems
-      .filter(item => item.type === 'Recurring')
-      .reduce((acc, item) => acc + item.ad, 0)
-  );
-
   return {
     W: warnings,
     dur: recurringDuration,
@@ -533,9 +487,6 @@ export function calculate(state: State): CalculationResult {
     its: activeItems,
     so: soSummary,
     cols: invoiceColumns,
-    totalBasicDiscount,
-    recurringTotalBasicDiscount,
-    oneTimeTotalBasicDiscount,
-    recurringTotalAdditionalDiscount
+    totalBasicDiscount
   };
 }
