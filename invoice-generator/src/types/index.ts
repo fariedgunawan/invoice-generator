@@ -115,6 +115,10 @@ export interface InvoiceFinancialSummary {
   tax: number;             // Taxes & charges
   ded: number;             // Deducted taxes
   grand: number;           // Grand total (pre + tax - ded)
+  preRaw: number;          // Pre-tax sebelum pembulatan
+  taxRaw: number;          // Taxes & charges sebelum pembulatan (pre × tax rate)
+  dedRaw: number;          // Deducted taxes sebelum pembulatan (pre × deducted rate)
+  grandRaw: number;        // Grand total sebelum pembulatan (preRaw + taxRaw - dedRaw)
   label?: string;          // e.g. 'INV 1'
   p?: InvoicePeriod;       // Associated period details
   [key: string]: number | string | InvoicePeriod | undefined;

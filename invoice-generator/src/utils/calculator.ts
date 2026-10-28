@@ -374,6 +374,12 @@ export function calculateInvoiceSummaries(
   const soDeductedTax = Math.round(soPreTax * deductedTaxRate);
   const soGrandTotal = Math.round(soPreTax + soTax - soDeductedTax);
 
+  // Nilai sebelum pembulatan (untuk ditampilkan 2 desimal pada tabel breakdown)
+  const soPreRaw = soOne + soRec + soDr;
+  const soTaxRaw = soPreTax * taxRate;
+  const soDedRaw = soPreTax * deductedTaxRate;
+  const soGrandRaw = soPreRaw + soTaxRaw - soDedRaw;
+
   const soSummary: InvoiceFinancialSummary = {
     one: soOne,
     rec: soRec,
@@ -383,7 +389,11 @@ export function calculateInvoiceSummaries(
     pre: soPreTax,
     tax: soTax,
     ded: soDeductedTax,
-    grand: soGrandTotal
+    grand: soGrandTotal,
+    preRaw: soPreRaw,
+    taxRaw: soTaxRaw,
+    dedRaw: soDedRaw,
+    grandRaw: soGrandRaw
   };
 
   // Ringkasan Finansial untuk Masing-Masing Kolom Invoice
@@ -401,6 +411,12 @@ export function calculateInvoiceSummaries(
 
     const colGrandTotal = Math.round(colPreTax + colTax - colDeductedTax);
 
+    // Nilai sebelum pembulatan (untuk ditampilkan 2 desimal pada tabel breakdown)
+    const colPreRaw = colOne + colRec + colDr;
+    const colTaxRaw = colPreTax * taxRate;
+    const colDedRaw = colPreTax * deductedTaxRate;
+    const colGrandRaw = colPreRaw + colTaxRaw - colDedRaw;
+
     return {
       one: colOne,
       rec: colRec,
@@ -411,6 +427,10 @@ export function calculateInvoiceSummaries(
       tax: colTax,
       ded: colDeductedTax,
       grand: colGrandTotal,
+      preRaw: colPreRaw,
+      taxRaw: colTaxRaw,
+      dedRaw: colDedRaw,
+      grandRaw: colGrandRaw,
       label: `INV ${k + 1}`,
       p: period
     };

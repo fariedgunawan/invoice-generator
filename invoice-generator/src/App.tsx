@@ -1,5 +1,14 @@
-import { useState, useMemo } from 'react';
-import { FiPlus, FiTrash2, FiInfo, FiAlertCircle, FiCheckCircle, FiActivity } from 'react-icons/fi';
+import { Fragment, useState, useMemo } from 'react';
+import {
+  FiPlus,
+  FiTrash2,
+  FiInfo,
+  FiAlertCircle,
+  FiCheckCircle,
+  FiActivity,
+  FiChevronDown,
+  FiChevronRight
+} from 'react-icons/fi';
 
 import type {
   Item,
@@ -13,15 +22,17 @@ import type {
 } from './types';
 import { calculate } from './utils/calculator';
 import { formatDate } from './utils/dateUtils';
-import { fmt, fmt9, r9 } from './utils/formatters';
+import { fmt, fmt2, fmt9, r9 } from './utils/formatters';
 import { DateInput } from './components/DateInput';
 import { FormInput } from './components/FormInput';
 import { CalculationTrace } from './components/CalculationTrace';
 
 interface TableDisplayRow {
+  id?: string;
   c?: string;
   isCur?: boolean;
   v: (string | number)[];
+  raw?: (string | number)[];
 }
 
 // Opsi pilihan tipe
@@ -40,6 +51,8 @@ const initialItems: Item[] = [
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'generator' | 'trace'>('generator');
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const toggleRow = (id: string) => setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
   const [state, setState] = useState<State>({
     start: '2026-01-01',
     end: '2026-04-30',
@@ -71,15 +84,23 @@ export default function App() {
     return row;
   };
 
-  // Helper membuat baris keuangan pada tabel ringkasan
-  const createFinancialRow = (label: string, key: string, customClass: string = ''): TableDisplayRow => {
-    const totalInvoices = r9(
-      calculation.cols.reduce((sum, col) => sum + (typeof col[key] === 'number' ? (col[key] as number) : 0), 0)
-    );
-    const soValue = typeof calculation.so[key] === 'number' ? (calculation.so[key] as number) : 0;
+  // Helper membuat baris keuangan pada tabel ringkasan.
+  // Jika rawKey diberikan, ditambahkan sub-baris 'Before rounding' (nilai sebelum pembulatan) yang bisa di-expand.
+  const createFinancialRow = (
+    label: string,
+    key: string,
+    customClass: string = '',
+    rawKey?: string
+  ): TableDisplayRow => {
+    const numberOf = (obj: Record<string, unknown>, k: string): number =>
+      typeof obj[k] === 'number' ? (obj[k] as number) : 0;
+
+    const totalInvoices = r9(calculation.cols.reduce((sum, col) => sum + numberOf(col, key), 0));
+    const soValue = numberOf(calculation.so, key);
     const diff = r9(totalInvoices - soValue);
 
-    return applyExchangeRate({
+    const row = applyExchangeRate({
+      id: key,
       c: customClass,
       isCur: true,
       v: [
@@ -90,6 +111,24 @@ export default function App() {
         ...calculation.cols.map(col => (typeof col[key] === 'number' ? (col[key] as number) : ''))
       ]
     });
+
+    if (rawKey) {
+      const rawTotal = r9(calculation.cols.reduce((sum, col) => sum + numberOf(col, rawKey), 0));
+      const rawSo = numberOf(calculation.so, rawKey);
+      const rawRow = applyExchangeRate({
+        isCur: true,
+        v: [
+          'Before rounding (2 decimals)',
+          rawSo,
+          rawTotal,
+          r9(rawTotal - rawSo),
+          ...calculation.cols.map(col => numberOf(col, rawKey))
+        ]
+      });
+      row.raw = rawRow.v;
+    }
+
+    return row;
   };
 
   // Helper membuat baris informasi jadwal (periode & hari)
@@ -116,10 +155,10 @@ export default function App() {
     createFinancialRow('Total basic discount', 'totalBasicDisc', 'text-gray-500 text-xs italic'),
     createFinancialRow('Total additional discount', 'totalAddlDisc', 'text-gray-500 text-xs italic'),
     createFinancialRow('DR (Daily) total', 'dr'),
-    createFinancialRow('Pre-tax total', 'pre', 'font-medium bg-gray-50 border-t border-b border-gray-100'),
-    createFinancialRow('Taxes and charges', 'tax'),
-    createFinancialRow('Deducted taxes', 'ded'),
-    createFinancialRow('Invoice grand total', 'grand', 'font-semibold bg-gray-100')
+    createFinancialRow('Pre-tax total', 'pre', 'font-medium bg-gray-50 border-t border-b border-gray-100', 'preRaw'),
+    createFinancialRow('Taxes and charges', 'tax', '', 'taxRaw'),
+    createFinancialRow('Deducted taxes', 'ded', '', 'dedRaw'),
+    createFinancialRow('Invoice grand total', 'grand', 'font-semibold bg-gray-100', 'grandRaw')
   ];
 
   // Pengecekan selisih pre-tax & nilai negatif
@@ -572,20 +611,55 @@ export default function App() {
                 <tbody className="divide-y divide-gray-100">
                   {invoiceSummaryRows.map((row, i) => {
                     const isFactorRow = String(row.v[0]).includes('Pro-rata factor');
+                    const rowId = row.id;
+                    const isExpandable = Boolean(rowId && row.raw);
+                    const isExpanded = Boolean(rowId && expandedRows[rowId]);
                     return (
-                      <tr key={i} className={`hover:bg-gray-50/50 transition-colors ${row.c || ''}`}>
-                        {row.v.map((val, j) => (
-                          <td
-                            key={j}
-                            className={`px-5 py-3.5 ${j === 0
-                                ? 'sticky left-0 bg-white z-10 font-medium text-gray-700'
-                                : 'text-right font-mono text-gray-600'
-                              }`}
-                          >
-                            {isFactorRow && typeof val === 'number' ? fmt9(val) : fmt(val)}
-                          </td>
-                        ))}
-                      </tr>
+                      <Fragment key={i}>
+                        <tr className={`hover:bg-gray-50/50 transition-colors ${row.c || ''}`}>
+                          {row.v.map((val, j) => (
+                            <td
+                              key={j}
+                              className={`px-5 py-3.5 ${j === 0
+                                  ? 'sticky left-0 bg-white z-10 font-medium text-gray-700'
+                                  : 'text-right font-mono text-gray-600'
+                                }`}
+                            >
+                              {j === 0 && isExpandable && rowId ? (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleRow(rowId)}
+                                  aria-expanded={isExpanded}
+                                  title="Tampilkan nilai sebelum pembulatan"
+                                  className="inline-flex items-center gap-1.5 cursor-pointer text-left hover:text-gray-900"
+                                >
+                                  {isExpanded ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}
+                                  <span>{fmt(val)}</span>
+                                </button>
+                              ) : isFactorRow && typeof val === 'number' ? (
+                                fmt9(val)
+                              ) : (
+                                fmt(val)
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                        {isExpanded && row.raw && (
+                          <tr className="bg-gray-50 text-xs italic text-gray-500">
+                            {row.raw.map((val, j) => (
+                              <td
+                                key={j}
+                                className={`px-5 py-2.5 ${j === 0
+                                    ? 'sticky left-0 bg-gray-50 z-10 pl-12 font-medium not-italic'
+                                    : 'text-right font-mono'
+                                  }`}
+                              >
+                                {j === 0 ? val : fmt2(val)}
+                              </td>
+                            ))}
+                          </tr>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
