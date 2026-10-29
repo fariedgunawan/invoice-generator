@@ -27,6 +27,16 @@ const MONTHS_PER_INVOICE: Record<string, number> = {
   Yearly: 12
 };
 
+// Penyebut prorata (hari): Monthly = hari/30, Quarterly/Semester/Yearly = hari/360
+// (Quarterly penuh 90/360, Semester 180/360, Yearly 360/360). Harga dianggap per tahun
+// untuk frekuensi selain Monthly.
+export const PRORATA_BASIS: Record<string, number> = {
+  Monthly: 30,
+  Quarterly: 90,
+  Semester: 180,
+  Yearly: 360
+};
+
 // ============================================================================
 // LANGKAH 1: Validasi Tanggal & Kalkulasi Durasi Kontrak
 // ============================================================================
@@ -34,6 +44,7 @@ export interface DurationValidationResult {
   startDate: DateObj;
   endDate: DateObj;
   monthsPerInvoice: number;
+  prorataBasis: number;
   cycleDay: number;
   isInvalidDateRange: boolean;
   recurringDuration: number;
@@ -45,7 +56,9 @@ export function validateAndGetDuration(state: State): DurationValidationResult {
   const startDate = parseDate(state.start || '2000-01-01');
   const endDate = parseDate(state.end || '2000-01-01');
   const monthsPerInvoice = MONTHS_PER_INVOICE[state.freq] || 1;
-  const cycleDay = +state.cyc || 0;
+  const prorataBasis = PRORATA_BASIS[state.freq] || 30;
+  // Cycle day hanya berlaku untuk Monthly; frekuensi lain memakai penambahan bulan dari start date
+  const cycleDay = state.freq === 'Monthly' ? +state.cyc || 0 : 0;
 
   const isInvalidDateRange = dateToSerial(startDate) > dateToSerial(endDate);
 
@@ -53,19 +66,20 @@ export function validateAndGetDuration(state: State): DurationValidationResult {
     warnings.push('Start is after end');
   }
 
-  if (!cycleDay && startDate.d > 28) {
+  if (state.freq === 'Monthly' && !cycleDay && startDate.d > 28) {
     warnings.push('Start on the 29th-31st without a cycle day: enter a cycle day 1-28');
   }
 
   // Durasi kontrak berlangganan dalam satuan bulan menggunakan metode 30/360
   const recurringDuration = isInvalidDateRange
     ? 0
-    : keepPrecision(calculateDays360(startDate, endDate) / 30);
+    : keepPrecision(calculateDays360(startDate, endDate) / prorataBasis);
 
   return {
     startDate,
     endDate,
     monthsPerInvoice,
+    prorataBasis,
     cycleDay,
     isInvalidDateRange,
     recurringDuration,
@@ -81,7 +95,8 @@ export function generateBillingPeriods(
   endDate: DateObj,
   monthsPerInvoice: number,
   cycleDay: number,
-  isInvalidDateRange: boolean
+  isInvalidDateRange: boolean,
+  prorataBasis: number = 30
 ): { periods: InvoicePeriod[]; periodWarning?: string } {
   const periods: InvoicePeriod[] = [];
   const maxInvoices = 25;
@@ -106,7 +121,7 @@ export function generateBillingPeriods(
 
     const periodEnd = serialToDate(Math.min(dateToSerial(endDate), dateToSerial(nextCutoff) - 1));
     const periodDays = calculateDays360(periodStart, periodEnd);
-    const proRataFactor = keepPrecision9(periodDays / 30);
+    const proRataFactor = keepPrecision9(periodDays / prorataBasis);
     const isLastPeriod = dateToSerial(periodEnd) === dateToSerial(endDate);
 
     periods.push({
@@ -456,6 +471,7 @@ export function calculate(state: State): CalculationResult {
     startDate,
     endDate,
     monthsPerInvoice,
+    prorataBasis,
     cycleDay,
     isInvalidDateRange,
     recurringDuration,
@@ -468,7 +484,8 @@ export function calculate(state: State): CalculationResult {
     endDate,
     monthsPerInvoice,
     cycleDay,
-    isInvalidDateRange
+    isInvalidDateRange,
+    prorataBasis
   );
   if (periodWarning) {
     warnings.push(periodWarning);
