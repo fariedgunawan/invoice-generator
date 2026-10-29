@@ -27,14 +27,14 @@ const MONTHS_PER_INVOICE: Record<string, number> = {
   Yearly: 12
 };
 
-// Penyebut prorata (hari): Monthly = hari/30, Quarterly/Semester/Yearly = hari/360
-// (Quarterly penuh 90/360, Semester 180/360, Yearly 360/360). Harga dianggap per tahun
-// untuk frekuensi selain Monthly.
+// Penyebut prorata (hari). Harga recurring dianggap per BULAN untuk semua frekuensi, sehingga
+// durasi kontrak (bulan) = hari 30/360 / 30 dan faktor invoice = hari / 30
+// (Quarterly penuh = 3 bulan, Semester = 6, Yearly = 12). Total kontrak = harga x durasi bulan.
 export const PRORATA_BASIS: Record<string, number> = {
   Monthly: 30,
-  Quarterly: 90,
-  Semester: 180,
-  Yearly: 360
+  Quarterly: 30,
+  Semester: 30,
+  Yearly: 30
 };
 
 // ============================================================================

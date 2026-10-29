@@ -55,11 +55,11 @@ export default function App() {
   const toggleRow = (id: string) => setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
   const [state, setState] = useState<State>({
     start: '2026-01-01',
-    end: '2026-04-30',
-    freq: 'Monthly',
+    end: '2026-12-31',
+    freq: 'Quarterly',
     cyc: '20',
     tx: '11',
-    dx: '2',
+    dx: '0',
     xn: '',
     xr: '1',
     items: initialItems,
