@@ -2,21 +2,22 @@ import React from 'react';
 
 interface DateInputProps {
   value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   className?: string;
   style?: React.CSSProperties;
   placeholder?: string;
 }
 
-export const DateInput: React.FC<DateInputProps> = ({
+export function DateInput({
   value,
   onChange,
   className = '',
   style,
   placeholder = 'YYYY-MM-DD'
-}) => {
-  const formattedForPicker = value.replace(/\//g, '-').match(/^\d{4}-\d{2}-\d{2}$/)
-    ? value.replace(/\//g, '-')
+}: DateInputProps) {
+  const normalizedDateValue = value.replace(/\//g, '-');
+  const formattedForDatePicker = /^\d{4}-\d{2}-\d{2}$/.test(normalizedDateValue)
+    ? normalizedDateValue
     : '';
 
   return (
@@ -33,9 +34,9 @@ export const DateInput: React.FC<DateInputProps> = ({
         className="absolute right-0 w-8 h-full opacity-0 cursor-pointer"
         title="Pilih dari Kalender"
         onChange={onChange}
-        value={formattedForPicker}
+        value={formattedForDatePicker}
       />
-      <div className="absolute right-2.5 pointer-events-none text-gray-500">
+      <div className="absolute right-2.5 pointer-events-none text-gray-500 dark:text-slate-400">
         <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
           <line x1="16" y1="2" x2="16" y2="6" />
@@ -45,4 +46,4 @@ export const DateInput: React.FC<DateInputProps> = ({
       </div>
     </div>
   );
-};
+}

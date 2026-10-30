@@ -1,79 +1,179 @@
 import type {
-  State,
-  Item,
-  DateObj,
+  InvoiceCalculatorState,
+  ProductItem,
+  DateObject,
   InvoicePeriod,
-  CalculatedItem,
+  CalculatedProductItem,
+  CalculatedProductPeriodRow,
   InvoiceFinancialSummary,
   CalculationResult,
   ProductType,
-  UnitType
+  DiscountType,
+  UnitType,
+  TableDisplayRow
 } from '../types';
-import {
-  parseDate,
-  dateToSerial,
-  serialToDate,
-  addMonths,
-  makeNormalizedDate,
-  calculateDays360
-} from './dateUtils';
-import { keepPrecision, keepPrecision9 } from './formatters';
 
-// Map frekuensi billing ke jumlah bulan per invoice
-const MONTHS_PER_INVOICE: Record<string, number> = {
+export const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+];
+
+export const MONTHS_PER_INVOICE_MAP: Record<string, number> = {
   Monthly: 1,
   Quarterly: 3,
   Semester: 6,
   Yearly: 12
 };
 
-// Penyebut prorata (hari). Harga recurring dianggap per BULAN untuk semua frekuensi, sehingga
-// durasi kontrak (bulan) = hari 30/360 / 30 dan faktor invoice = hari / 30
-// (Quarterly penuh = 3 bulan, Semester = 6, Yearly = 12). Total kontrak = harga x durasi bulan.
-export const PRORATA_BASIS: Record<string, number> = {
+export const PRORATA_BASIS_MAP: Record<string, number> = {
   Monthly: 30,
   Quarterly: 30,
   Semester: 30,
   Yearly: 30
 };
 
-// ============================================================================
-// LANGKAH 1: Validasi Tanggal & Kalkulasi Durasi Kontrak
-// ============================================================================
-export interface DurationValidationResult {
-  startDate: DateObj;
-  endDate: DateObj;
-  monthsPerInvoice: number;
-  prorataBasis: number;
-  cycleDay: number;
-  isInvalidDateRange: boolean;
-  recurringDuration: number;
-  warnings: string[];
+export function roundToInteger(value: number): number {
+  return Math.round(value);
 }
 
-export function validateAndGetDuration(state: State): DurationValidationResult {
-  const warnings: string[] = [];
-  const startDate = parseDate(state.start || '2000-01-01');
-  const endDate = parseDate(state.end || '2000-01-01');
-  const monthsPerInvoice = MONTHS_PER_INVOICE[state.freq] || 1;
-  const prorataBasis = PRORATA_BASIS[state.freq] || 30;
-  // Cycle day hanya berlaku untuk Monthly; frekuensi lain memakai penambahan bulan dari start date
-  const cycleDay = state.freq === 'Monthly' ? +state.cyc || 0 : 0;
+export function roundToTwoDecimals(value: number): number {
+  return Number(value.toFixed(2));
+}
 
-  const isInvalidDateRange = dateToSerial(startDate) > dateToSerial(endDate);
+export function roundToNineDecimals(value: number): number {
+  return Number(value.toFixed(9));
+}
+
+export function isGigabyteUnit(unit: UnitType): boolean {
+  return (unit || '').trim().toLowerCase() === 'gb';
+}
+
+export function roundByUnitType(value: number, unit: UnitType): number {
+  return isGigabyteUnit(unit) ? roundToTwoDecimals(value) : roundToInteger(value);
+}
+
+export function formatDisplayNumber(value: unknown, maxFractionDigits = 2): string {
+  if (value === '' || value == null) return '';
+  if (typeof value === 'number') {
+    return value.toLocaleString('en-US', { maximumFractionDigits: maxFractionDigits });
+  }
+  return String(value);
+}
+
+export function formatNumberWithTwoDecimals(value: unknown): string {
+  if (typeof value !== 'number') return value === '' || value == null ? '' : String(value);
+  return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export function formatNumberWithNineDecimals(value: unknown): string {
+  return formatDisplayNumber(value, 9);
+}
+
+export function formatDateToDisplay(date: DateObject): string {
+  const paddedDay = String(date.day).padStart(2, '0');
+  const monthName = MONTH_NAMES[date.month - 1];
+  return `${paddedDay}-${monthName}-${date.year}`;
+}
+
+export function adjustDayFor360Convention(day: number): number {
+  return [28, 29, 31].includes(day) ? 30 : day;
+}
+
+export function parseDateString(dateString: string): DateObject {
+  const [year, month, day] = (dateString || '').replace(/\//g, '-').split('-').map(Number);
+  return {
+    year: year || 2000,
+    month: month || 1,
+    day: day || 1
+  };
+}
+
+export function convertDateToSerialDays(date: DateObject): number {
+  return Date.UTC(date.year, date.month - 1, date.day) / 86400000;
+}
+
+export function convertSerialDaysToDate(serialDays: number): DateObject {
+  const utcDate = new Date(serialDays * 86400000);
+  return {
+    year: utcDate.getUTCFullYear(),
+    month: utcDate.getUTCMonth() + 1,
+    day: utcDate.getUTCDate()
+  };
+}
+
+export function getDaysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+export function addMonthsToDate(date: DateObject, monthsToAdd: number): DateObject {
+  const totalMonths = date.year * 12 + date.month - 1 + monthsToAdd;
+  const targetYear = Math.floor(totalMonths / 12);
+  const targetMonth = (totalMonths % 12) + 1;
+  const maxDayInTargetMonth = getDaysInMonth(targetYear, targetMonth);
+  return {
+    year: targetYear,
+    month: targetMonth,
+    day: Math.min(date.day, maxDayInTargetMonth)
+  };
+}
+
+export function createNormalizedDate(year: number, month: number, day: number): DateObject {
+  const totalMonths = year * 12 + month - 1;
+  return {
+    year: Math.floor(totalMonths / 12),
+    month: (totalMonths % 12) + 1,
+    day
+  };
+}
+
+export function calculateDays360Between(startDate: DateObject, endDate: DateObject): number {
+  return (
+    (endDate.year - startDate.year) * 360 +
+    (endDate.month - startDate.month) * 30 +
+    adjustDayFor360Convention(endDate.day) -
+    adjustDayFor360Convention(startDate.day) +
+    1
+  );
+}
+
+export function calculateProRataFactor(days: number, prorataBasis = 30): number {
+  return roundToNineDecimals(days / prorataBasis);
+}
+
+export function calculateContractDurationInMonths(
+  startDate: DateObject,
+  endDate: DateObject,
+  prorataBasis: number,
+  isInvalidDateRange: boolean
+): number {
+  if (isInvalidDateRange) return 0;
+  return roundToTwoDecimals(calculateDays360Between(startDate, endDate) / prorataBasis);
+}
+
+export function validateDatesAndCalculateDuration(state: InvoiceCalculatorState) {
+  const warnings: string[] = [];
+  const startDate = parseDateString(state.startDate || '2000-01-01');
+  const endDate = parseDateString(state.endDate || '2000-01-01');
+  const monthsPerInvoice = MONTHS_PER_INVOICE_MAP[state.billingFrequency] || 1;
+  const prorataBasis = PRORATA_BASIS_MAP[state.billingFrequency] || 30;
+  const cycleDay = state.billingFrequency === 'Monthly' ? Number(state.cycleDay) || 0 : 0;
+
+  const isInvalidDateRange = convertDateToSerialDays(startDate) > convertDateToSerialDays(endDate);
 
   if (isInvalidDateRange) {
     warnings.push('Start is after end');
   }
 
-  if (state.freq === 'Monthly' && !cycleDay && startDate.d > 28) {
+  if (state.billingFrequency === 'Monthly' && !cycleDay && startDate.day > 28) {
     warnings.push('Start on the 29th-31st without a cycle day: enter a cycle day 1-28');
   }
 
-  // Durasi kontrak berlangganan dalam satuan bulan menggunakan metode 30/360
-  const recurringDuration = isInvalidDateRange
-    ? 0
-    : keepPrecision(calculateDays360(startDate, endDate) / prorataBasis);
+  const recurringDurationMonths = calculateContractDurationInMonths(
+    startDate,
+    endDate,
+    prorataBasis,
+    isInvalidDateRange
+  );
 
   return {
     startDate,
@@ -82,391 +182,778 @@ export function validateAndGetDuration(state: State): DurationValidationResult {
     prorataBasis,
     cycleDay,
     isInvalidDateRange,
-    recurringDuration,
+    recurringDurationMonths,
     warnings
   };
 }
 
-// ============================================================================
-// LANGKAH 2: Pembuatan Jadwal Periode Invoice (Billing Periods)
-// ============================================================================
+export function calculateNextCutoffDate(
+  contractStartDate: DateObject,
+  currentPeriodStartDate: DateObject,
+  monthsPerInvoice: number,
+  invoiceSequenceNumber: number,
+  cycleDay: number
+): DateObject {
+  if (!cycleDay) {
+    return addMonthsToDate(contractStartDate, monthsPerInvoice * invoiceSequenceNumber);
+  }
+  if (currentPeriodStartDate.day === cycleDay) {
+    return addMonthsToDate(currentPeriodStartDate, monthsPerInvoice);
+  }
+  if (currentPeriodStartDate.day < cycleDay) {
+    return createNormalizedDate(currentPeriodStartDate.year, currentPeriodStartDate.month, cycleDay);
+  }
+  return createNormalizedDate(currentPeriodStartDate.year, currentPeriodStartDate.month + 1, cycleDay);
+}
+
 export function generateBillingPeriods(
-  startDate: DateObj,
-  endDate: DateObj,
+  startDate: DateObject,
+  endDate: DateObject,
   monthsPerInvoice: number,
   cycleDay: number,
   isInvalidDateRange: boolean,
-  prorataBasis: number = 30
-): { periods: InvoicePeriod[]; periodWarning?: string } {
-  const periods: InvoicePeriod[] = [];
-  const maxInvoices = 25;
+  prorataBasis = 30
+): { billingPeriods: InvoicePeriod[]; periodWarning?: string } {
+  const billingPeriods: InvoicePeriod[] = [];
+  const maxInvoicesAllowed = 25;
 
-  for (let k = 1; k <= maxInvoices && !isInvalidDateRange; k++) {
-    let periodStart = startDate;
+  for (let sequence = 1; sequence <= maxInvoicesAllowed && !isInvalidDateRange; sequence++) {
+    let periodStartDate = startDate;
 
-    if (k > 1) {
-      const prevEndSerial = dateToSerial(periods[k - 2].e);
-      if (prevEndSerial >= dateToSerial(endDate)) break;
-      periodStart = serialToDate(prevEndSerial + 1);
+    if (sequence > 1) {
+      const previousEndSerial = convertDateToSerialDays(billingPeriods[sequence - 2].endDate);
+      if (previousEndSerial >= convertDateToSerialDays(endDate)) break;
+      periodStartDate = convertSerialDaysToDate(previousEndSerial + 1);
     }
 
-    // Tentukan batas cutoff berikutnya (berdasarkan cycle day atau penambahan bulan)
-    const nextCutoff = !cycleDay
-      ? addMonths(startDate, monthsPerInvoice * k)
-      : periodStart.d === cycleDay
-        ? addMonths(periodStart, monthsPerInvoice)
-        : periodStart.d < cycleDay
-          ? makeNormalizedDate(periodStart.y, periodStart.m, cycleDay)
-          : makeNormalizedDate(periodStart.y, periodStart.m + 1, cycleDay);
+    const nextCutoffDate = calculateNextCutoffDate(
+      startDate,
+      periodStartDate,
+      monthsPerInvoice,
+      sequence,
+      cycleDay
+    );
 
-    const periodEnd = serialToDate(Math.min(dateToSerial(endDate), dateToSerial(nextCutoff) - 1));
-    const periodDays = calculateDays360(periodStart, periodEnd);
-    const proRataFactor = keepPrecision9(periodDays / prorataBasis);
-    const isLastPeriod = dateToSerial(periodEnd) === dateToSerial(endDate);
+    const periodEndSerial = Math.min(
+      convertDateToSerialDays(endDate),
+      convertDateToSerialDays(nextCutoffDate) - 1
+    );
+    const periodEndDate = convertSerialDaysToDate(periodEndSerial);
+    const periodDays = calculateDays360Between(periodStartDate, periodEndDate);
+    const proRataFactor = calculateProRataFactor(periodDays, prorataBasis);
+    const isLastPeriod = convertDateToSerialDays(periodEndDate) === convertDateToSerialDays(endDate);
 
-    periods.push({
-      s: periodStart,
-      e: periodEnd,
+    billingPeriods.push({
+      startDate: periodStartDate,
+      endDate: periodEndDate,
       days: periodDays,
-      f: proRataFactor,
-      last: isLastPeriod
+      proRataFactor,
+      isLastPeriod
     });
   }
 
   let periodWarning: string | undefined;
-  if (periods.length && dateToSerial(periods[periods.length - 1].e) < dateToSerial(endDate)) {
+  if (
+    billingPeriods.length &&
+    convertDateToSerialDays(billingPeriods[billingPeriods.length - 1].endDate) < convertDateToSerialDays(endDate)
+  ) {
     periodWarning = 'More than 25 invoices needed (max 25)';
   }
 
-  return { periods, periodWarning };
+  return { billingPeriods, periodWarning };
 }
 
-// ============================================================================
-// LANGKAH 3: Kalkulasi Nilai Dasar Produk (Price, Discounts, Grand Total)
-// ============================================================================
-export function calculateItemBaseMetrics(
-  rawItem: Item,
-  index: number,
-  recurringDuration: number
-): CalculatedItem {
-  const isUsed = rawItem.price !== '';
-  const itemUnit: UnitType = rawItem.unit || 'Unit';
-  const isGb = (itemUnit || '').trim().toLowerCase() === 'gb';
-  // Jika GB maka tidak di-rounding (presisi 2 angka di belakang koma), selain GB di-rounding bulat (Math.round)
-  const roundItem = (val: number): number => (isGb ? keepPrecision(val) : Math.round(val));
+export function calculateDailyRateDurationDays(item: ProductItem): number {
+  if (item.type !== 'DR (Daily)' || !item.dailyRateStartDate || !item.dailyRateEndDate) {
+    return 0;
+  }
+  const drStart = parseDateString(item.dailyRateStartDate);
+  const drEnd = parseDateString(item.dailyRateEndDate);
+  return Math.max(0, calculateDays360Between(drStart, drEnd));
+}
 
-  const baseItem: CalculatedItem = {
+export function calculateProductDuration(item: ProductItem, recurringDurationMonths: number): number {
+  if (item.type === 'Recurring') return recurringDurationMonths;
+  if (item.type === 'One time') return 1;
+  return calculateDailyRateDurationDays(item);
+}
+
+export function calculateBasicDiscountPerUnit(
+  pricePerUnit: number,
+  discountType: DiscountType,
+  discountValue: number,
+  unit: UnitType
+): number {
+  if (discountType === 'Percentage') {
+    return roundByUnitType((pricePerUnit * discountValue) / 100, unit);
+  }
+  return roundByUnitType(discountValue, unit);
+}
+
+export function calculateNetPricePerUnit(
+  pricePerUnit: number,
+  basicDiscountPerUnit: number,
+  unit: UnitType
+): number {
+  return roundByUnitType(pricePerUnit - basicDiscountPerUnit, unit);
+}
+
+export function calculateTotalBasicDiscount(
+  basicDiscountPerUnit: number,
+  quantity: number,
+  duration: number,
+  unit: UnitType
+): number {
+  return roundByUnitType(basicDiscountPerUnit * quantity * duration, unit);
+}
+
+export function calculateTotalAfterBasicDiscount(
+  pricePerUnit: number,
+  basicDiscountPerUnit: number,
+  quantity: number,
+  duration: number
+): number {
+  return roundToInteger((pricePerUnit - basicDiscountPerUnit) * quantity * duration);
+}
+
+export function calculateAdditionalDiscountAmount(
+  totalAfterBasicDiscount: number,
+  discountType: DiscountType,
+  discountValue: number
+): number {
+  if (discountType === 'Percentage') {
+    return roundToInteger((totalAfterBasicDiscount * discountValue) / 100);
+  }
+  return roundToInteger(discountValue);
+}
+
+export function calculateItemGrandTotal(
+  totalAfterBasicDiscount: number,
+  additionalDiscountAmount: number
+): number {
+  return roundToInteger(totalAfterBasicDiscount - additionalDiscountAmount);
+}
+
+export function calculateBasicDiscountRatio(
+  pricePerUnit: number,
+  discountType: DiscountType,
+  discountValue: number
+): number {
+  if (discountType === 'Percentage') return discountValue / 100;
+  return pricePerUnit ? discountValue / pricePerUnit : 0;
+}
+
+export function calculateSingleProductMetrics(
+  rawItem: ProductItem,
+  itemIndex: number,
+  recurringDurationMonths: number
+): CalculatedProductItem {
+  const isUsed = rawItem.price !== '';
+  const unit: UnitType = rawItem.unit || 'Unit';
+  const basicDiscountType = rawItem.basicDiscountType || 'Percentage';
+  const additionalDiscountType = rawItem.additionalDiscountType || 'Amount';
+  const basicDiscountValue = Number(rawItem.basicDiscountValue) || 0;
+  const additionalDiscountValue = Number(rawItem.additionalDiscountValue) || 0;
+
+  const emptyItem: CalculatedProductItem = {
     id: rawItem.id,
     name: rawItem.name,
     type: rawItem.type,
-    unit: itemUnit,
+    unit,
     price: 0,
-    qty: 0,
-    bt: rawItem.bt || 'Percentage',
-    bv: +rawItem.bv || 0,
-    bd: 0,
+    quantity: 0,
+    basicDiscountType,
+    basicDiscountValue,
+    basicDiscountPerUnit: 0,
     totalBasicDiscount: 0,
-    net: 0,
-    dur: 0,
-    tt: 0,
-    at: rawItem.at || 'Amount',
-    av: +rawItem.av || 0,
-    ad: 0,
-    gt: 0,
-    pct: 0,
-    so: rawItem.so,
-    ds: rawItem.ds,
-    de: rawItem.de,
-    used: isUsed,
-    origIndex: index,
-    rows: []
+    netPricePerUnit: 0,
+    duration: 0,
+    totalAfterBasicDiscount: 0,
+    additionalDiscountType,
+    additionalDiscountValue,
+    additionalDiscountAmount: 0,
+    grandTotal: 0,
+    basicDiscountRatio: 0,
+    salesOrderExpectedTotal: rawItem.salesOrderExpectedTotal,
+    dailyRateStartDate: rawItem.dailyRateStartDate,
+    dailyRateEndDate: rawItem.dailyRateEndDate,
+    isUsed,
+    originalIndex: itemIndex,
+    periodRows: []
   };
 
-  if (!isUsed) return baseItem;
+  if (!isUsed) return emptyItem;
 
-  const price = roundItem(+rawItem.price || 0);
-  const qty = +rawItem.qty || 0;
-  const basicDiscVal = +rawItem.bv || 0;
-  const addlDiscVal = +rawItem.av || 0;
-  const isBasicPercentage = rawItem.bt === 'Percentage';
-
-  // Durasi harian untuk tipe Daily Rate (DR)
-  let drDays = 0;
-  if (rawItem.type === 'DR (Daily)' && rawItem.ds && rawItem.de) {
-    const d1 = parseDate(rawItem.ds);
-    const d2 = parseDate(rawItem.de);
-    drDays = Math.max(0, calculateDays360(d1, d2));
-  }
-
-  // 1. Basic Discount per unit
-  const basicDiscount = isBasicPercentage
-    ? roundItem((price * basicDiscVal) / 100)
-    : roundItem(basicDiscVal);
-
-  // 2. Net Price per unit
-  const netPrice = roundItem(price - basicDiscount);
-
-  // 3. Durasi pengali (bulan untuk recurring, 1 untuk one-time, hari untuk DR)
-  const duration = rawItem.type === 'Recurring'
-    ? recurringDuration
-    : rawItem.type === 'One time'
-      ? 1
-      : drDays;
-
-  // Total Basic Discount untuk seluruh durasi kontrak
-  const totalBasicDiscount = roundItem(basicDiscount * qty * duration);
-
-  // 4. Total setelah basic discount ((Price per unit - Basic Discount) * Qty * Durasi, selalu di-rounding bulat)
-  const totalAfterBasic = Math.round((price - basicDiscount) * qty * duration);
-  
-
-  // 5. Additional Discount (selalu di-rounding bulat)
-  const additionalDiscount = Math.round(
-    rawItem.at === 'Percentage'
-      ? (totalAfterBasic * addlDiscVal) / 100
-      : addlDiscVal
+  const price = roundByUnitType(Number(rawItem.price) || 0, unit);
+  const quantity = Number(rawItem.quantity) || 0;
+  const duration = calculateProductDuration(rawItem, recurringDurationMonths);
+  const basicDiscountPerUnit = calculateBasicDiscountPerUnit(price, basicDiscountType, basicDiscountValue, unit);
+  const netPricePerUnit = calculateNetPricePerUnit(price, basicDiscountPerUnit, unit);
+  const totalBasicDiscount = calculateTotalBasicDiscount(basicDiscountPerUnit, quantity, duration, unit);
+  const totalAfterBasicDiscount = calculateTotalAfterBasicDiscount(price, basicDiscountPerUnit, quantity, duration);
+  const additionalDiscountAmount = calculateAdditionalDiscountAmount(
+    totalAfterBasicDiscount,
+    additionalDiscountType,
+    additionalDiscountValue
   );
-
-  // 6. Grand Total item (selalu di-rounding bulat)
-  const grandTotal = Math.round(totalAfterBasic - additionalDiscount);
-
-  // 7. Rasio diskon dasar (untuk merekonstruksi harga unit pada periode prorata)
-  const discountRatio = isBasicPercentage
-    ? basicDiscVal / 100
-    : price
-      ? basicDiscVal / price
-      : 0;
+  const grandTotal = calculateItemGrandTotal(totalAfterBasicDiscount, additionalDiscountAmount);
+  const basicDiscountRatio = calculateBasicDiscountRatio(price, basicDiscountType, basicDiscountValue);
 
   return {
-    ...baseItem,
+    ...emptyItem,
     price,
-    qty,
-    bt: rawItem.bt || 'Percentage',
-    bv: basicDiscVal,
-    bd: basicDiscount,
+    quantity,
+    basicDiscountPerUnit,
     totalBasicDiscount,
-    net: netPrice,
-    dur: duration,
-    tt: totalAfterBasic,
-    at: rawItem.at || 'Amount',
-    av: addlDiscVal,
-    ad: additionalDiscount,
-    gt: grandTotal,
-    pct: discountRatio
+    netPricePerUnit,
+    duration,
+    totalAfterBasicDiscount,
+    additionalDiscountAmount,
+    grandTotal,
+    basicDiscountRatio
   };
 }
 
-// ============================================================================
-// LANGKAH 4: Alokasi Nilai Produk ke Setiap Periode Invoice
-// ============================================================================
-export function allocateItemToPeriods(
-  item: CalculatedItem,
-  periods: InvoicePeriod[]
+export function findTargetInvoiceIndexForDailyRate(
+  item: CalculatedProductItem,
+  billingPeriods: InvoicePeriod[]
+): number {
+  if (item.type !== 'DR (Daily)' || !item.dailyRateStartDate || billingPeriods.length === 0) {
+    return 0;
+  }
+  const drStartSerial = convertDateToSerialDays(parseDateString(item.dailyRateStartDate));
+  const matchedIndex = billingPeriods.findIndex(
+    period =>
+      convertDateToSerialDays(period.startDate) <= drStartSerial &&
+      drStartSerial <= convertDateToSerialDays(period.endDate)
+  );
+  if (matchedIndex !== -1) return matchedIndex;
+  return drStartSerial < convertDateToSerialDays(billingPeriods[0].startDate)
+    ? 0
+    : billingPeriods.length - 1;
+}
+
+export function createEmptyPeriodRow(): CalculatedProductPeriodRow {
+  return {
+    unitPrice: '',
+    basicDiscountPerUnit: '',
+    netPricePerUnit: '',
+    totalBasicDiscount: 0,
+    totalAfterBasicDiscount: 0,
+    additionalDiscountAmount: 0,
+    grandTotal: 0
+  };
+}
+
+export function calculateFullAllocationPeriodRow(item: CalculatedProductItem): CalculatedProductPeriodRow {
+  return {
+    unitPrice: item.price,
+    basicDiscountPerUnit: item.basicDiscountPerUnit,
+    netPricePerUnit: item.netPricePerUnit,
+    totalBasicDiscount: item.totalBasicDiscount,
+    totalAfterBasicDiscount: item.totalAfterBasicDiscount,
+    additionalDiscountAmount: item.additionalDiscountAmount,
+    grandTotal: item.grandTotal
+  };
+}
+
+export function calculateRecurringPeriodRow(
+  item: CalculatedProductItem,
+  period: InvoicePeriod,
+  cumulativeBasicDiscount: number,
+  cumulativeTotalAfterBasic: number,
+  cumulativeAdditionalDiscount: number,
+  cumulativeGrandTotal: number
+): CalculatedProductPeriodRow {
+  if (!item.duration) return createEmptyPeriodRow();
+
+  const unitPrice = roundByUnitType(item.price * period.proRataFactor, item.unit);
+  const basicDiscountPerUnit =
+    item.basicDiscountType === 'Percentage'
+      ? roundByUnitType((unitPrice * item.basicDiscountValue) / 100, item.unit)
+      : roundByUnitType(item.basicDiscountPerUnit * period.proRataFactor, item.unit);
+  const netPricePerUnit = roundByUnitType(unitPrice - basicDiscountPerUnit, item.unit);
+
+  if (period.isLastPeriod) {
+    return {
+      unitPrice,
+      basicDiscountPerUnit,
+      netPricePerUnit,
+      totalBasicDiscount: roundByUnitType(item.totalBasicDiscount - cumulativeBasicDiscount, item.unit),
+      totalAfterBasicDiscount: item.totalAfterBasicDiscount - cumulativeTotalAfterBasic,
+      additionalDiscountAmount: item.additionalDiscountAmount - cumulativeAdditionalDiscount,
+      grandTotal: item.grandTotal - cumulativeGrandTotal
+    };
+  }
+
+  const totalBasicDiscount = roundByUnitType(basicDiscountPerUnit * item.quantity, item.unit);
+  const totalAfterBasicDiscount = roundToInteger(netPricePerUnit * item.quantity);
+  const additionalDiscountAmount = roundToInteger(
+    (item.additionalDiscountAmount * period.proRataFactor) / item.duration
+  );
+  const grandTotal = roundToInteger(totalAfterBasicDiscount - additionalDiscountAmount);
+
+  return {
+    unitPrice,
+    basicDiscountPerUnit,
+    netPricePerUnit,
+    totalBasicDiscount,
+    totalAfterBasicDiscount,
+    additionalDiscountAmount,
+    grandTotal
+  };
+}
+
+export function allocateProductToBillingPeriods(
+  item: CalculatedProductItem,
+  billingPeriods: InvoicePeriod[]
 ): void {
-  item.rows = [];
+  item.periodRows = [];
   let cumulativeTotalAfterBasic = 0;
   let cumulativeAdditionalDiscount = 0;
   let cumulativeBasicDiscount = 0;
   let cumulativeGrandTotal = 0;
-  let drTargetInvoiceIndex = 0;
 
-  const isGb = (item.unit || '').trim().toLowerCase() === 'gb';
-  // Jika GB maka tidak di-rounding (presisi 2 angka di belakang koma), selain GB di-rounding bulat (Math.round)
-  const roundItem = (val: number): number => (isGb ? keepPrecision(val) : Math.round(val));
+  const dailyRateTargetIndex = findTargetInvoiceIndexForDailyRate(item, billingPeriods);
 
-  // Untuk DR: cari invoice yang mencakup tanggal mulai DR
-  if (item.type === 'DR (Daily)' && item.ds) {
-    const drStartSerial = dateToSerial(parseDate(item.ds));
-    drTargetInvoiceIndex = periods.findIndex(
-      p => dateToSerial(p.s) <= drStartSerial && drStartSerial <= dateToSerial(p.e)
-    );
-    if (drTargetInvoiceIndex === -1) {
-      drTargetInvoiceIndex = drStartSerial < dateToSerial(periods[0].s) ? 0 : periods.length - 1;
+  billingPeriods.forEach((period, periodIndex) => {
+    if (item.type === 'Recurring') {
+      const recurringRow = calculateRecurringPeriodRow(
+        item,
+        period,
+        cumulativeBasicDiscount,
+        cumulativeTotalAfterBasic,
+        cumulativeAdditionalDiscount,
+        cumulativeGrandTotal
+      );
+      cumulativeTotalAfterBasic += recurringRow.totalAfterBasicDiscount;
+      cumulativeAdditionalDiscount += recurringRow.additionalDiscountAmount;
+      cumulativeBasicDiscount = roundByUnitType(
+        cumulativeBasicDiscount + recurringRow.totalBasicDiscount,
+        item.unit
+      );
+      cumulativeGrandTotal += recurringRow.grandTotal;
+      item.periodRows.push(recurringRow);
+      return;
     }
+
+    const shouldBillInThisPeriod =
+      (item.type === 'One time' && periodIndex === 0) ||
+      (item.type === 'DR (Daily)' && periodIndex === dailyRateTargetIndex);
+
+    if (shouldBillInThisPeriod) {
+      item.periodRows.push(calculateFullAllocationPeriodRow(item));
+    } else {
+      item.periodRows.push(createEmptyPeriodRow());
+    }
+  });
+}
+
+export function sumProductTotalsByType(
+  activeItems: CalculatedProductItem[],
+  productType: ProductType,
+  valueSelector: (item: CalculatedProductItem) => number
+): number {
+  return roundToTwoDecimals(
+    activeItems
+      .filter(item => item.type === productType)
+      .reduce((sum, item) => sum + valueSelector(item), 0)
+  );
+}
+
+export function hasAnyGigabyteProduct(activeItems: CalculatedProductItem[]): boolean {
+  return activeItems.some(item => isGigabyteUnit(item.unit));
+}
+
+export function roundSummaryAmount(value: number, hasGigabyteProduct: boolean): number {
+  return hasGigabyteProduct ? roundToTwoDecimals(value) : roundToInteger(value);
+}
+
+export function sumAllProductsAmount(
+  activeItems: CalculatedProductItem[],
+  hasGigabyteProduct: boolean,
+  valueSelector: (item: CalculatedProductItem) => number
+): number {
+  return roundSummaryAmount(
+    activeItems.reduce((sum, item) => sum + valueSelector(item), 0),
+    hasGigabyteProduct
+  );
+}
+
+export function buildFinancialSummaryObject(
+  oneTimeTotal: number,
+  recurringTotal: number,
+  dailyRateTotal: number,
+  totalBasicDiscount: number,
+  totalAdditionalDiscount: number,
+  taxRateDecimal: number,
+  deductedTaxRateDecimal: number,
+  hasGigabyteProduct: boolean,
+  label?: string,
+  period?: InvoicePeriod
+): InvoiceFinancialSummary {
+  const preTaxTotal = roundSummaryAmount(oneTimeTotal + recurringTotal + dailyRateTotal, hasGigabyteProduct);
+  const taxAmount = roundToInteger(preTaxTotal * taxRateDecimal);
+  const deductedTaxAmount = roundToInteger(preTaxTotal * deductedTaxRateDecimal);
+  const grandTotal = roundToInteger(preTaxTotal + taxAmount - deductedTaxAmount);
+
+  const preTaxRaw = oneTimeTotal + recurringTotal + dailyRateTotal;
+  const taxRaw = preTaxTotal * taxRateDecimal;
+  const deductedTaxRaw = preTaxTotal * deductedTaxRateDecimal;
+  const grandTotalRaw = preTaxRaw + taxRaw - deductedTaxRaw;
+
+  return {
+    oneTimeTotal,
+    recurringTotal,
+    dailyRateTotal,
+    totalBasicDiscount,
+    totalAdditionalDiscount,
+    preTaxTotal,
+    taxAmount,
+    deductedTaxAmount,
+    grandTotal,
+    preTaxRaw,
+    taxRaw,
+    deductedTaxRaw,
+    grandTotalRaw,
+    label,
+    period
+  };
+}
+
+export function calculateInvoiceFinancialSummaries(
+  activeItems: CalculatedProductItem[],
+  billingPeriods: InvoicePeriod[],
+  taxRatePercent: string,
+  deductedTaxRatePercent: string
+): { salesOrderSummary: InvoiceFinancialSummary; invoiceColumns: InvoiceFinancialSummary[] } {
+  const taxRateDecimal = (Number(taxRatePercent) || 0) / 100;
+  const deductedTaxRateDecimal = (Number(deductedTaxRatePercent) || 0) / 100;
+  const hasGigabyteProduct = hasAnyGigabyteProduct(activeItems);
+
+  const salesOrderSummary = buildFinancialSummaryObject(
+    sumProductTotalsByType(activeItems, 'One time', item => item.grandTotal),
+    sumProductTotalsByType(activeItems, 'Recurring', item => item.grandTotal),
+    sumProductTotalsByType(activeItems, 'DR (Daily)', item => item.grandTotal),
+    sumAllProductsAmount(activeItems, hasGigabyteProduct, item => item.totalBasicDiscount),
+    sumAllProductsAmount(activeItems, hasGigabyteProduct, item => item.additionalDiscountAmount),
+    taxRateDecimal,
+    deductedTaxRateDecimal,
+    hasGigabyteProduct
+  );
+
+  const invoiceColumns: InvoiceFinancialSummary[] = billingPeriods.map((period, periodIndex) =>
+    buildFinancialSummaryObject(
+      sumProductTotalsByType(activeItems, 'One time', item => item.periodRows[periodIndex].grandTotal),
+      sumProductTotalsByType(activeItems, 'Recurring', item => item.periodRows[periodIndex].grandTotal),
+      sumProductTotalsByType(activeItems, 'DR (Daily)', item => item.periodRows[periodIndex].grandTotal),
+      sumAllProductsAmount(
+        activeItems,
+        hasGigabyteProduct,
+        item => Number(item.periodRows[periodIndex].totalBasicDiscount) || 0
+      ),
+      sumAllProductsAmount(
+        activeItems,
+        hasGigabyteProduct,
+        item => Number(item.periodRows[periodIndex].additionalDiscountAmount) || 0
+      ),
+      taxRateDecimal,
+      deductedTaxRateDecimal,
+      hasGigabyteProduct,
+      `INV ${periodIndex + 1}`,
+      period
+    )
+  );
+
+  return { salesOrderSummary, invoiceColumns };
+}
+
+export function applyExchangeRateToTableRow(
+  row: TableDisplayRow,
+  exchangeRateMultiplier: number
+): TableDisplayRow {
+  if (row.isCurrency) {
+    row.values = row.values.map((value, columnIndex) =>
+      columnIndex > 0 && typeof value === 'number'
+        ? roundToNineDecimals(value * exchangeRateMultiplier)
+        : value
+    );
+  }
+  return row;
+}
+
+export function extractNumericProperty(
+  record: Record<string, unknown>,
+  propertyName: string
+): number {
+  return typeof record[propertyName] === 'number' ? (record[propertyName] as number) : 0;
+}
+
+export function createFinancialSummaryRow(
+  calculation: CalculationResult,
+  label: string,
+  metricKey: string,
+  targetCurrencySuffix: string,
+  exchangeRateMultiplier: number,
+  customClass = '',
+  rawMetricKey?: string
+): TableDisplayRow {
+  const totalAcrossInvoices = roundToNineDecimals(
+    calculation.invoiceColumns.reduce(
+      (sum, column) => sum + extractNumericProperty(column, metricKey),
+      0
+    )
+  );
+  const salesOrderValue = extractNumericProperty(calculation.salesOrderSummary, metricKey);
+  const differenceValue = roundToNineDecimals(totalAcrossInvoices - salesOrderValue);
+
+  const displayRow = applyExchangeRateToTableRow(
+    {
+      id: metricKey,
+      customClass,
+      isCurrency: true,
+      values: [
+        label + targetCurrencySuffix,
+        salesOrderValue,
+        totalAcrossInvoices,
+        differenceValue,
+        ...calculation.invoiceColumns.map(column =>
+          typeof column[metricKey] === 'number' ? (column[metricKey] as number) : ''
+        )
+      ]
+    },
+    exchangeRateMultiplier
+  );
+
+  if (rawMetricKey) {
+    const rawTotalAcrossInvoices = roundToNineDecimals(
+      calculation.invoiceColumns.reduce(
+        (sum, column) => sum + extractNumericProperty(column, rawMetricKey),
+        0
+      )
+    );
+    const rawSalesOrderValue = extractNumericProperty(calculation.salesOrderSummary, rawMetricKey);
+    const rawDisplayRow = applyExchangeRateToTableRow(
+      {
+        isCurrency: true,
+        values: [
+          'Before rounding (2 decimals)',
+          rawSalesOrderValue,
+          rawTotalAcrossInvoices,
+          roundToNineDecimals(rawTotalAcrossInvoices - rawSalesOrderValue),
+          ...calculation.invoiceColumns.map(column => extractNumericProperty(column, rawMetricKey))
+        ]
+      },
+      exchangeRateMultiplier
+    );
+    displayRow.rawValues = rawDisplayRow.values;
   }
 
-  periods.forEach((period, k) => {
-    let periodTotalAfterBasic = 0;
-    let periodAdditionalDiscount = 0;
-    let periodTotalBasicDiscount = 0;
-    let periodUnitPrice: number | '' = '';
-    let periodBasicDiscount: number | '' = '';
-    let periodNetPrice: number | '' = '';
-    let periodGrandTotal = 0;
+  return displayRow;
+}
 
-    if (item.type === 'Recurring') {
-      if (item.dur) {
-        // Price per unit di invoice (prorata terhadap faktor hari period.f)
-        periodUnitPrice = roundItem(item.price * period.f);
-        // Basic discount per unit di invoice
-        periodBasicDiscount = item.bt === 'Percentage'
-          ? roundItem((periodUnitPrice * item.bv) / 100)
-          : roundItem(item.bd * period.f);
-        // Net price per unit di invoice
-        periodNetPrice = roundItem(periodUnitPrice - periodBasicDiscount);
+export function createPeriodScheduleRow(
+  calculation: CalculationResult,
+  label: string,
+  valueExtractor: (period: InvoicePeriod) => string | number
+): TableDisplayRow {
+  return {
+    values: [
+      label,
+      '',
+      '',
+      '',
+      ...calculation.invoiceColumns.map(column =>
+        column.period ? valueExtractor(column.period) : ''
+      )
+    ]
+  };
+}
 
-        if (period.last) {
-          // Periode terakhir menyerap sisa agar total invoice sama persis dengan total kontrak
-          periodTotalBasicDiscount = roundItem(item.totalBasicDiscount - cumulativeBasicDiscount);
-          // Total after basic di invoice menyerap sisa rounding agar total tepat sama dengan kontrak
-          periodTotalAfterBasic = item.tt - cumulativeTotalAfterBasic;
-          periodAdditionalDiscount = item.ad - cumulativeAdditionalDiscount;
-          periodGrandTotal = item.gt - cumulativeGrandTotal;
-        } else {
-          // Total basic discount di invoice: Basic discount / unit * Qty
-          periodTotalBasicDiscount = roundItem(periodBasicDiscount * item.qty);
-          // Rumus: (Price per unit - Basic discount per unit) * qty = Net price per unit * qty (di-rounding bulat)
-          periodTotalAfterBasic = Math.round(periodNetPrice * item.qty);
-          periodAdditionalDiscount = Math.round((item.ad * period.f) / item.dur);
-          periodGrandTotal = Math.round(periodTotalAfterBasic - periodAdditionalDiscount);
-        }
-      }
-      cumulativeTotalAfterBasic += periodTotalAfterBasic;
-      cumulativeAdditionalDiscount += periodAdditionalDiscount;
-      cumulativeBasicDiscount = roundItem(cumulativeBasicDiscount + periodTotalBasicDiscount);
-      cumulativeGrandTotal += periodGrandTotal;
-    } else if (
-      (item.type === 'One time' && k === 0) ||
-      (item.type === 'DR (Daily)' && k === drTargetInvoiceIndex)
-    ) {
-      // One-time ditagihkan penuh di INV 1; DR ditagihkan penuh di invoice periode mulainya
-      periodTotalAfterBasic = item.tt;
-      periodAdditionalDiscount = item.ad;
-      periodTotalBasicDiscount = item.totalBasicDiscount;
-      periodUnitPrice = item.price;
-      periodBasicDiscount = item.bd;
-      periodNetPrice = item.net;
-      periodGrandTotal = item.gt;
-    }
+export function buildInvoiceSummaryTableRows(
+  calculation: CalculationResult,
+  targetCurrencySuffix: string,
+  exchangeRateMultiplier: number
+): TableDisplayRow[] {
+  return [
+    createPeriodScheduleRow(calculation, 'Period start', period => formatDateToDisplay(period.startDate)),
+    createPeriodScheduleRow(calculation, 'Period end', period => formatDateToDisplay(period.endDate)),
+    createPeriodScheduleRow(calculation, 'Days (30/360)', period => period.days),
+    createPeriodScheduleRow(calculation, 'Pro-rata factor (days / 30)', period => period.proRataFactor),
+    createFinancialSummaryRow(
+      calculation,
+      'One time total',
+      'oneTimeTotal',
+      targetCurrencySuffix,
+      exchangeRateMultiplier
+    ),
+    createFinancialSummaryRow(
+      calculation,
+      'Recurring total',
+      'recurringTotal',
+      targetCurrencySuffix,
+      exchangeRateMultiplier
+    ),
+    createFinancialSummaryRow(
+      calculation,
+      'Total basic discount',
+      'totalBasicDiscount',
+      targetCurrencySuffix,
+      exchangeRateMultiplier,
+      'text-gray-500 dark:text-slate-400 text-xs italic'
+    ),
+    createFinancialSummaryRow(
+      calculation,
+      'Total additional discount',
+      'totalAdditionalDiscount',
+      targetCurrencySuffix,
+      exchangeRateMultiplier,
+      'text-gray-500 dark:text-slate-400 text-xs italic'
+    ),
+    createFinancialSummaryRow(
+      calculation,
+      'DR (Daily) total',
+      'dailyRateTotal',
+      targetCurrencySuffix,
+      exchangeRateMultiplier
+    ),
+    createFinancialSummaryRow(
+      calculation,
+      'Pre-tax total',
+      'preTaxTotal',
+      targetCurrencySuffix,
+      exchangeRateMultiplier,
+      'font-medium bg-gray-50 dark:bg-slate-800/60 border-t border-b border-gray-100 dark:border-slate-800',
+      'preTaxRaw'
+    ),
+    createFinancialSummaryRow(
+      calculation,
+      'Taxes and charges',
+      'taxAmount',
+      targetCurrencySuffix,
+      exchangeRateMultiplier,
+      '',
+      'taxRaw'
+    ),
+    createFinancialSummaryRow(
+      calculation,
+      'Deducted taxes',
+      'deductedTaxAmount',
+      targetCurrencySuffix,
+      exchangeRateMultiplier,
+      '',
+      'deductedTaxRaw'
+    ),
+    createFinancialSummaryRow(
+      calculation,
+      'Invoice grand total',
+      'grandTotal',
+      targetCurrencySuffix,
+      exchangeRateMultiplier,
+      'font-semibold bg-gray-100 dark:bg-slate-800',
+      'grandTotalRaw'
+    )
+  ];
+}
 
-    item.rows.push({
-      pr: periodUnitPrice,
-      dc: periodBasicDiscount,
-      nt: periodNetPrice,
-      tbd: periodTotalBasicDiscount,
-      tt: periodTotalAfterBasic,
-      ad: periodAdditionalDiscount,
-      gt: periodGrandTotal
-    });
+export function buildProductBreakdownTableRows(
+  item: CalculatedProductItem,
+  calculation: CalculationResult,
+  targetCurrencySuffix: string,
+  exchangeRateMultiplier: number
+): TableDisplayRow[] {
+  const metricDefinitions: [
+    string,
+    keyof CalculatedProductPeriodRow,
+    keyof CalculatedProductItem
+  ][] = [
+    ['Price per unit', 'unitPrice', 'price'],
+    ['Basic discount / unit', 'basicDiscountPerUnit', 'basicDiscountPerUnit'],
+    ['Total basic discount', 'totalBasicDiscount', 'totalBasicDiscount'],
+    ['Net price per unit', 'netPricePerUnit', 'netPricePerUnit'],
+    ['Total after basic', 'totalAfterBasicDiscount', 'totalAfterBasicDiscount'],
+    ['Additional discount', 'additionalDiscountAmount', 'additionalDiscountAmount'],
+    ['Item grand total', 'grandTotal', 'grandTotal']
+  ];
+
+  const summableKeys: (keyof CalculatedProductPeriodRow)[] = [
+    'totalBasicDiscount',
+    'totalAfterBasicDiscount',
+    'additionalDiscountAmount',
+    'grandTotal'
+  ];
+
+  return metricDefinitions.map(([label, periodMetricKey, salesOrderMetricKey]) => {
+    const periodValues = calculation.invoiceColumns.map(
+      (_, columnIndex) => item.periodRows[columnIndex][periodMetricKey]
+    );
+    const isSummable = summableKeys.includes(periodMetricKey);
+    const summedAcrossPeriods = isSummable
+      ? roundToNineDecimals(
+          periodValues.reduce<number>((sum, value) => sum + (Number(value) || 0), 0)
+        )
+      : '';
+    const differenceFromSalesOrder = isSummable
+      ? roundToNineDecimals((summedAcrossPeriods as number) - (item[salesOrderMetricKey] as number))
+      : '';
+
+    return applyExchangeRateToTableRow(
+      {
+        isCurrency: true,
+        customClass:
+          periodMetricKey === 'grandTotal' ? 'bg-gray-50 dark:bg-slate-800/60 font-medium' : '',
+        values: [
+          label + targetCurrencySuffix,
+          item[salesOrderMetricKey] as number,
+          summedAcrossPeriods,
+          differenceFromSalesOrder,
+          ...periodValues
+        ]
+      },
+      exchangeRateMultiplier
+    );
   });
 }
 
-// ============================================================================
-// LANGKAH 5: Agregasi Subtotal, Pajak, dan Grand Total Invoice
-// ============================================================================
-export function calculateInvoiceSummaries(
-  activeItems: CalculatedItem[],
-  periods: InvoicePeriod[],
-  taxPercent: string,
-  deductedTaxPercent: string
-): { soSummary: InvoiceFinancialSummary; invoiceColumns: InvoiceFinancialSummary[] } {
-  const sumByType = (type: ProductType, selector: (it: CalculatedItem) => number): number => {
-    return keepPrecision(
-      activeItems.filter(i => i.type === type).reduce((acc, i) => acc + selector(i), 0)
-    );
-  };
+export function collectInvoiceReconciliationWarnings(
+  calculation: CalculationResult,
+  invoiceSummaryRows: TableDisplayRow[]
+): string[] {
+  const warnings = [...calculation.warnings];
+  const preTaxRow = invoiceSummaryRows.find(row =>
+    String(row.values[0]).startsWith('Pre-tax total')
+  );
+  const preTaxDifference = preTaxRow ? roundToNineDecimals(preTaxRow.values[3] as number) : 0;
 
-  const taxRate = (+taxPercent || 0) / 100;
-  const deductedTaxRate = (+deductedTaxPercent || 0) / 100;
+  if (calculation.invoiceColumns.length && Math.abs(preTaxDifference) >= 0.01) {
+    warnings.push('Pre-tax of invoices differs from SO by ' + formatDisplayNumber(preTaxDifference));
+  }
+  if (calculation.invoiceColumns.some(column => column.grandTotal < 0)) {
+    warnings.push('An invoice has a negative amount: check dates and durations');
+  }
 
-  // Jika terdapat item bertipe GB, summary mempertahankan presisi 2 desimal. Jika semua non-GB, dibulatkan integer.
-  const hasAnyGb = activeItems.some(item => (item.unit || '').trim().toLowerCase() === 'gb');
-  const roundSummary = (val: number): number => (hasAnyGb ? keepPrecision(val) : Math.round(val));
-
-  const sumAll = (selector: (it: CalculatedItem) => number): number => {
-    return roundSummary(
-      activeItems.reduce((acc, i) => acc + selector(i), 0)
-    );
-  };
-
-  // Ringkasan Finansial Sales Order Keseluruhan
-  const soOne = sumByType('One time', i => i.gt);
-  const soRec = sumByType('Recurring', i => i.gt);
-  const soDr = sumByType('DR (Daily)', i => i.gt);
-  const soPreTax = roundSummary(soOne + soRec + soDr);
-  // Pajak & potongan pajak selalu dibulatkan bulat (integer rounding)
-  const soTax = Math.round(soPreTax * taxRate);
-  const soDeductedTax = Math.round(soPreTax * deductedTaxRate);
-  const soGrandTotal = Math.round(soPreTax + soTax - soDeductedTax);
-
-  // Nilai sebelum pembulatan (untuk ditampilkan 2 desimal pada tabel breakdown)
-  const soPreRaw = soOne + soRec + soDr;
-  const soTaxRaw = soPreTax * taxRate;
-  const soDedRaw = soPreTax * deductedTaxRate;
-  const soGrandRaw = soPreRaw + soTaxRaw - soDedRaw;
-
-  const soSummary: InvoiceFinancialSummary = {
-    one: soOne,
-    rec: soRec,
-    dr: soDr,
-    totalBasicDisc: sumAll(i => i.totalBasicDiscount),
-    totalAddlDisc: sumAll(i => i.ad),
-    pre: soPreTax,
-    tax: soTax,
-    ded: soDeductedTax,
-    grand: soGrandTotal,
-    preRaw: soPreRaw,
-    taxRaw: soTaxRaw,
-    dedRaw: soDedRaw,
-    grandRaw: soGrandRaw
-  };
-
-  // Ringkasan Finansial untuk Masing-Masing Kolom Invoice
-  const invoiceColumns: InvoiceFinancialSummary[] = periods.map((period, k) => {
-    const colOne = sumByType('One time', i => i.rows[k].gt);
-    const colRec = sumByType('Recurring', i => i.rows[k].gt);
-    const colDr = sumByType('DR (Daily)', i => i.rows[k].gt);
-    const colPreTax = roundSummary(colOne + colRec + colDr);
-
-    // Pajak dan potongan pajak tiap invoice dibulatkan murni (Math.round) dari pre-tax invoice tersebut.
-    // Tidak ada penyerapan selisih: jika jumlah pajak seluruh invoice berbeda dengan pajak SO
-    // (akibat pembulatan per invoice), selisihnya ditampilkan apa adanya pada kolom Difference.
-    const colTax = Math.round(colPreTax * taxRate);
-    const colDeductedTax = Math.round(colPreTax * deductedTaxRate);
-
-    const colGrandTotal = Math.round(colPreTax + colTax - colDeductedTax);
-
-    // Nilai sebelum pembulatan (untuk ditampilkan 2 desimal pada tabel breakdown)
-    const colPreRaw = colOne + colRec + colDr;
-    const colTaxRaw = colPreTax * taxRate;
-    const colDedRaw = colPreTax * deductedTaxRate;
-    const colGrandRaw = colPreRaw + colTaxRaw - colDedRaw;
-
-    return {
-      one: colOne,
-      rec: colRec,
-      dr: colDr,
-      totalBasicDisc: sumAll(i => +i.rows[k].tbd || 0),
-      totalAddlDisc: sumAll(i => +i.rows[k].ad || 0),
-      pre: colPreTax,
-      tax: colTax,
-      ded: colDeductedTax,
-      grand: colGrandTotal,
-      preRaw: colPreRaw,
-      taxRaw: colTaxRaw,
-      dedRaw: colDedRaw,
-      grandRaw: colGrandRaw,
-      label: `INV ${k + 1}`,
-      p: period
-    };
-  });
-
-  return { soSummary, invoiceColumns };
+  return warnings;
 }
 
-// ============================================================================
-// FUNGSI UTAMA: calculate()
-// ============================================================================
-/**
- * Alur Perhitungan Keseluruhan:
- * 1. Validasi tanggal dan hitung durasi bulan kontrak (30/360)
- * 2. Generate jadwal periode invoice berdasarkan cycle day dan frekuensi
- * 3. Hitung nilai dasar setiap item (harga, diskon dasar, net, diskon tambahan, grand total)
- * 4. Alokasikan nilai setiap item ke dalam masing-masing periode invoice
- * 5. Agregasikan ringkasan finansial (Pre-tax, Pajak, Grand Total) untuk SO dan tiap invoice
- */
-export function calculate(state: State): CalculationResult {
-  // 1. Validasi tanggal & durasi
+export function createNewEmptyProductItem(): ProductItem {
+  return {
+    id: Math.random().toString(36).slice(2, 9),
+    name: '',
+    type: 'Recurring',
+    unit: 'Unit',
+    price: '',
+    basicDiscountType: 'Amount',
+    basicDiscountValue: '',
+    quantity: '1',
+    dailyRateStartDate: '',
+    dailyRateEndDate: '',
+    additionalDiscountType: 'Amount',
+    additionalDiscountValue: '',
+    salesOrderExpectedTotal: ''
+  };
+}
+
+export function calculateInvoiceSchedule(state: InvoiceCalculatorState): CalculationResult {
   const {
     startDate,
     endDate,
@@ -474,12 +961,11 @@ export function calculate(state: State): CalculationResult {
     prorataBasis,
     cycleDay,
     isInvalidDateRange,
-    recurringDuration,
+    recurringDurationMonths,
     warnings
-  } = validateAndGetDuration(state);
+  } = validateDatesAndCalculateDuration(state);
 
-  // 2. Buat jadwal invoice
-  const { periods, periodWarning } = generateBillingPeriods(
+  const { billingPeriods, periodWarning } = generateBillingPeriods(
     startDate,
     endDate,
     monthsPerInvoice,
@@ -487,43 +973,40 @@ export function calculate(state: State): CalculationResult {
     isInvalidDateRange,
     prorataBasis
   );
+
   if (periodWarning) {
     warnings.push(periodWarning);
   }
 
-  // 3. Hitung metrik dasar semua item
-  const allItems: CalculatedItem[] = state.items.map((rawItem, idx) =>
-    calculateItemBaseMetrics(rawItem, idx, recurringDuration)
+  const allCalculatedItems: CalculatedProductItem[] = state.items.map((rawItem, itemIndex) =>
+    calculateSingleProductMetrics(rawItem, itemIndex, recurringDurationMonths)
   );
-  const activeItems = allItems.filter(item => item.used);
+  const activeCalculatedItems = allCalculatedItems.filter(item => item.isUsed);
 
-  // 4. Alokasikan item aktif ke setiap periode invoice
-  activeItems.forEach(item => {
-    allocateItemToPeriods(item, periods);
+  activeCalculatedItems.forEach(item => {
+    allocateProductToBillingPeriods(item, billingPeriods);
   });
 
-  // 5. Agregasikan subtotal finansial
-  const { soSummary, invoiceColumns } = calculateInvoiceSummaries(
-    activeItems,
-    periods,
-    state.tx,
-    state.dx
+  const { salesOrderSummary, invoiceColumns } = calculateInvoiceFinancialSummaries(
+    activeCalculatedItems,
+    billingPeriods,
+    state.taxRatePercent,
+    state.deductedTaxRatePercent
   );
 
-  // Total diskon dasar seluruh produk (semua tipe)
-  const totalBasicDiscount = keepPrecision(
-    activeItems.reduce((acc, item) => acc + item.totalBasicDiscount, 0)
+  const totalBasicDiscount = roundToTwoDecimals(
+    activeCalculatedItems.reduce((sum, item) => sum + item.totalBasicDiscount, 0)
   );
 
   return {
-    W: warnings,
-    dur: recurringDuration,
-    mpi: monthsPerInvoice,
-    per: periods,
-    all: allItems,
-    its: activeItems,
-    so: soSummary,
-    cols: invoiceColumns,
+    warnings,
+    recurringDurationMonths,
+    monthsPerInvoice,
+    billingPeriods,
+    allCalculatedItems,
+    activeCalculatedItems,
+    salesOrderSummary,
+    invoiceColumns,
     totalBasicDiscount
   };
 }
