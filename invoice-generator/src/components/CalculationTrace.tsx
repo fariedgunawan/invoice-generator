@@ -137,7 +137,7 @@ export function CalculationTrace({
 }: CalculationTraceProps) {
   const [activeTab, setActiveTab] = useState<TraceTabId>('invoice-step');
   const [selectedInvoiceIndex, setSelectedInvoiceIndex] = useState<number>(0);
-  const [selectedProductIndex, setSelectedProductIndex] = useState<number>(3);
+  const [selectedProductIndex, setSelectedProductIndex] = useState<number>(0);
 
   const activeItems = calculation.activeCalculatedItems;
   const invoiceColumns = calculation.invoiceColumns;
@@ -148,7 +148,7 @@ export function CalculationTrace({
   const selectedPeriodRow: CalculatedProductPeriodRow | undefined =
     selectedItem?.periodRows[selectedInvoiceIndex];
 
-  const proRataFactor = selectedColumn?.period?.proRataFactor ?? 1;
+  const proRataFactor = selectedPeriodRow?.proRataFactor ?? selectedColumn?.period?.proRataFactor ?? 1;
   const hasDeductedTax = Number(state.deductedTaxRatePercent) > 0;
   const grandTotalDifference = calculateDifferenceFromSalesOrder(
     invoiceColumns,
@@ -260,7 +260,7 @@ export function CalculationTrace({
             {
               label: 'Produk aktif',
               value: `${activeItems.length}`,
-              note: 'Item dengan harga terisi'
+              note: 'Selain status Delete'
             },
             {
               label: 'Pre-tax SO',
@@ -311,6 +311,10 @@ export function CalculationTrace({
                       <span className="font-semibold">{item.name || `Product ${index + 1}`}</span>
                       <span className={isSelected ? 'text-slate-200' : 'text-slate-500 dark:text-slate-400'}>
                         {' '}
+                        · {item.status}
+                        {item.status === 'Terminate' && item.terminateDate
+                          ? ` (${item.terminateDate})`
+                          : ''}{' '}
                         · {item.type} · {item.unit} · Qty {item.quantity}
                       </span>
                     </button>
@@ -324,12 +328,18 @@ export function CalculationTrace({
                 <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-5 flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                      {selectedItem.name} di {selectedColumn.label}
+                      {selectedItem.name} di {selectedColumn.label}{' '}
+                      <span className="text-xs font-normal px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 ml-2">
+                        Status: {selectedItem.status}
+                        {selectedItem.status === 'Terminate' && selectedItem.terminateDate
+                          ? ` (${selectedItem.terminateDate})`
+                          : ''}
+                      </span>
                     </h2>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Periode {formatDateToDisplay(selectedColumn.period!.startDate)} s/d{' '}
-                      {formatDateToDisplay(selectedColumn.period!.endDate)} ({selectedColumn.period!.days}{' '}
-                      hari) · faktor prorata f = {formatNumberWithNineDecimals(selectedColumn.period!.proRataFactor)}
+                      {selectedPeriodRow.activeStartDate && selectedPeriodRow.activeEndDate
+                        ? `Periode aktif item: ${formatDateToDisplay(selectedPeriodRow.activeStartDate)} s/d ${formatDateToDisplay(selectedPeriodRow.activeEndDate)} (${selectedPeriodRow.activeDays} hari) · faktor prorata f = ${formatNumberWithNineDecimals(proRataFactor)}`
+                        : `Tidak aktif di periode ${formatDateToDisplay(selectedColumn.period!.startDate)} s/d ${formatDateToDisplay(selectedColumn.period!.endDate)} (0 hari) · faktor prorata f = 0`}
                     </p>
                   </div>
                   <div className="text-right">
@@ -347,9 +357,9 @@ export function CalculationTrace({
                     description={`Harga satuan dikalikan faktor prorata f (${formatNumberWithNineDecimals(proRataFactor)}).`}
                     formulaRule="Price × f"
                     calculationLines={[
-                      `${formatDisplayNumber(selectedItem.price)} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.unitPrice)}`
+                      `${formatDisplayNumber(selectedItem.price)} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)}`
                     ]}
-                    resultValue={formatDisplayNumber(selectedPeriodRow.unitPrice)}
+                    resultValue={formatDisplayNumber(selectedPeriodRow.unitPrice || 0)}
                   />
                   <StepCard
                     stepNumber={2}
@@ -366,10 +376,10 @@ export function CalculationTrace({
                     }
                     calculationLines={[
                       selectedItem.basicDiscountType === 'Percentage'
-                        ? `${formatDisplayNumber(selectedPeriodRow.unitPrice)} × ${selectedItem.basicDiscountValue}% = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit)}`
-                        : `${formatDisplayNumber(selectedItem.basicDiscountPerUnit)} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit)}`
+                        ? `${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)} × ${selectedItem.basicDiscountValue}% = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}`
+                        : `${formatDisplayNumber(selectedItem.basicDiscountPerUnit)} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}`
                     ]}
-                    resultValue={formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit)}
+                    resultValue={formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}
                   />
                   <StepCard
                     stepNumber={3}
@@ -377,9 +387,9 @@ export function CalculationTrace({
                     description="Harga satuan dikurangi diskon dasar satuan."
                     formulaRule="Price per unit − Basic discount per unit"
                     calculationLines={[
-                      `${formatDisplayNumber(selectedPeriodRow.unitPrice)} − ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit)} = ${formatDisplayNumber(selectedPeriodRow.netPricePerUnit)}`
+                      `${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)} − ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} = ${formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)}`
                     ]}
-                    resultValue={formatDisplayNumber(selectedPeriodRow.netPricePerUnit)}
+                    resultValue={formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)}
                   />
                   <StepCard
                     stepNumber={4}
@@ -387,7 +397,7 @@ export function CalculationTrace({
                     description={`Diskon dasar per unit dikalikan Qty (${selectedItem.quantity}).`}
                     formulaRule="Basic discount per unit × Qty"
                     calculationLines={[
-                      `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit)} × ${selectedItem.quantity} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
+                      `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} × ${selectedItem.quantity} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
                     ]}
                     resultValue={formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}
                   />
@@ -397,8 +407,8 @@ export function CalculationTrace({
                     description="Net price per unit dikalikan Qty, lalu dibulatkan ke bilangan bulat."
                     formulaRule="Round(Net price per unit × Qty)"
                     calculationLines={[
-                      `${formatDisplayNumber(selectedPeriodRow.netPricePerUnit)} × ${selectedItem.quantity} = ${(Number(selectedPeriodRow.netPricePerUnit) * selectedItem.quantity).toFixed(2)}`,
-                      `Round(${(Number(selectedPeriodRow.netPricePerUnit) * selectedItem.quantity).toFixed(2)}) = ${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)}`
+                      `${formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)} × ${selectedItem.quantity} = ${(Number(selectedPeriodRow.netPricePerUnit || 0) * selectedItem.quantity).toFixed(2)}`,
+                      `Round(${(Number(selectedPeriodRow.netPricePerUnit || 0) * selectedItem.quantity).toFixed(2)}) = ${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)}`
                     ]}
                     resultValue={formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)}
                     isHighlighted
@@ -438,7 +448,7 @@ export function CalculationTrace({
                 Nilai dasar kontrak (SO)
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Nilai kontrak penuh tiap produk. Ini menjadi acuan yang dibandingkan dengan jumlah seluruh invoice.
+                Nilai kontrak penuh tiap produk (tetap mengikuti durasi kontrak awal meskipun produk berstatus Terminate).
               </p>
             </div>
 
@@ -450,7 +460,12 @@ export function CalculationTrace({
                 >
                   <div className="flex items-start justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
                     <div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400">{item.type}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {item.type} · Status: {item.status}
+                        {item.status === 'Terminate' && item.terminateDate
+                          ? ` (${item.terminateDate})`
+                          : ''}
+                      </div>
                       <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                         {item.name}
                       </h3>
@@ -468,7 +483,7 @@ export function CalculationTrace({
                         formatDisplayNumber(item.basicDiscountPerUnit)
                       ],
                       ['Net price per unit (Price − BD)', formatDisplayNumber(item.netPricePerUnit)],
-                      ['Durasi', `${item.duration} ${item.type === 'DR (Daily)' ? 'hari' : 'bulan'}`],
+                      ['Durasi SO', `${item.duration} ${item.type === 'DR (Daily)' ? 'hari' : 'bulan'}`],
                       ['Total basic discount (BD × Qty × Durasi)', formatDisplayNumber(item.totalBasicDiscount)],
                       [
                         'Total after basic ((Price − BD) × Qty × Durasi)',

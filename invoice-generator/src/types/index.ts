@@ -1,4 +1,5 @@
 export type ProductType = 'One time' | 'Recurring' | 'DR (Daily)';
+export type ProductStatus = 'Production' | 'Suspend' | 'Terminate' | 'Delete';
 export type DiscountType = 'Amount' | 'Percentage';
 export type BillingFrequency = 'Monthly' | 'Quarterly' | 'Semester' | 'Yearly';
 export type UnitType = 'Unit' | 'GB';
@@ -7,6 +8,8 @@ export type ThemeMode = 'light' | 'dark';
 export interface ProductItem {
   id: string;
   name: string;
+  status: ProductStatus;
+  terminateDate: string;
   type: ProductType;
   unit: UnitType;
   price: string;
@@ -29,6 +32,7 @@ export interface InvoiceCalculatorState {
   deductedTaxRatePercent: string;
   targetCurrency: string;
   exchangeRate: string;
+  terminateAllDate: string;
   items: ProductItem[];
 }
 
@@ -47,18 +51,26 @@ export interface InvoicePeriod {
 }
 
 export interface CalculatedProductPeriodRow {
-  unitPrice: number | '';
-  basicDiscountPerUnit: number | '';
-  netPricePerUnit: number | '';
+  unitPrice: number | "";
+  basicDiscountPerUnit: number | "";
+  netPricePerUnit: number | "";
   totalBasicDiscount: number;
   totalAfterBasicDiscount: number;
   additionalDiscountAmount: number;
   grandTotal: number;
+  activeDays: number;
+  proRataFactor: number;
+  activeStartDate?: DateObject;
+  activeEndDate?: DateObject;
+  isLastActivePeriod?: boolean;
 }
 
 export interface CalculatedProductItem {
   id?: string;
   name: string;
+  status: ProductStatus;
+  terminateDate: string;
+  effectiveEndDate?: DateObject;
   type: ProductType;
   unit: UnitType;
   price: number;
@@ -79,6 +91,7 @@ export interface CalculatedProductItem {
   dailyRateStartDate: string;
   dailyRateEndDate: string;
   isUsed: boolean;
+  isBillable: boolean;
   originalIndex: number;
   periodRows: CalculatedProductPeriodRow[];
 }

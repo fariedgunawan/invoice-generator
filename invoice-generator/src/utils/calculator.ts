@@ -1,6 +1,7 @@
 import type {
   InvoiceCalculatorState,
   ProductItem,
+  ProductStatus,
   DateObject,
   InvoicePeriod,
   CalculatedProductItem,
@@ -140,6 +141,42 @@ export function calculateProRataFactor(days: number, prorataBasis = 30): number 
   return roundToNineDecimals(days / prorataBasis);
 }
 
+export function isProductStatusDeleted(status: ProductStatus): boolean {
+  return status === 'Delete';
+}
+
+export function isProductStatusSuspended(status: ProductStatus): boolean {
+  return status === 'Suspend';
+}
+
+export function isProductStatusTerminated(status: ProductStatus): boolean {
+  return status === 'Terminate';
+}
+
+export function isProductStatusBillable(status: ProductStatus): boolean {
+  return status === 'Production' || status === 'Suspend' || status === 'Terminate';
+}
+
+export function canApplyTerminateAllToProduct(item: ProductItem): boolean {
+  return item.status !== 'Terminate' && item.status !== 'Delete';
+}
+
+export function applyTerminateAllToProductList(
+  items: ProductItem[],
+  terminateAllDate: string
+): ProductItem[] {
+  return items.map(item => {
+    if (!canApplyTerminateAllToProduct(item)) {
+      return item;
+    }
+    return {
+      ...item,
+      status: 'Terminate',
+      terminateDate: terminateAllDate
+    };
+  });
+}
+
 export function calculateContractDurationInMonths(
   startDate: DateObject,
   endDate: DateObject,
@@ -263,7 +300,26 @@ export function generateBillingPeriods(
   return { billingPeriods, periodWarning };
 }
 
-export function calculateDailyRateDurationDays(item: ProductItem): number {
+export function resolveProductEffectiveEndDate(
+  item: ProductItem,
+  contractEndDate: DateObject
+): DateObject | undefined {
+  if (item.status === 'Production' || item.status === 'Suspend') {
+    return contractEndDate;
+  }
+  if (item.status === 'Terminate') {
+    if (!item.terminateDate) return undefined;
+    const parsedTerminateDate = parseDateString(item.terminateDate);
+    const effectiveSerial = Math.min(
+      convertDateToSerialDays(contractEndDate),
+      convertDateToSerialDays(parsedTerminateDate)
+    );
+    return convertSerialDaysToDate(effectiveSerial);
+  }
+  return undefined;
+}
+
+export function calculateDailyRateContractDurationDays(item: ProductItem): number {
   if (item.type !== 'DR (Daily)' || !item.dailyRateStartDate || !item.dailyRateEndDate) {
     return 0;
   }
@@ -272,10 +328,43 @@ export function calculateDailyRateDurationDays(item: ProductItem): number {
   return Math.max(0, calculateDays360Between(drStart, drEnd));
 }
 
-export function calculateProductDuration(item: ProductItem, recurringDurationMonths: number): number {
-  if (item.type === 'Recurring') return recurringDurationMonths;
-  if (item.type === 'One time') return 1;
-  return calculateDailyRateDurationDays(item);
+export function calculateDailyRateActiveInvoiceDays(item: CalculatedProductItem): number {
+  if (item.type !== 'DR (Daily)' || !item.dailyRateStartDate || !item.dailyRateEndDate) {
+    return 0;
+  }
+  const drStart = parseDateString(item.dailyRateStartDate);
+  const drEnd = parseDateString(item.dailyRateEndDate);
+
+  if (item.status === 'Terminate') {
+    if (!item.terminateDate) return 0;
+    const terminateDateObj = parseDateString(item.terminateDate);
+    if (convertDateToSerialDays(terminateDateObj) < convertDateToSerialDays(drStart)) {
+      return 0;
+    }
+    const effectiveDrEnd =
+      convertDateToSerialDays(terminateDateObj) < convertDateToSerialDays(drEnd)
+        ? terminateDateObj
+        : drEnd;
+    return Math.max(0, calculateDays360Between(drStart, effectiveDrEnd));
+  }
+
+  return Math.max(0, calculateDays360Between(drStart, drEnd));
+}
+
+export function calculateProductContractDuration(
+  item: ProductItem,
+  recurringDurationMonths: number
+): number {
+  if (isProductStatusDeleted(item.status)) {
+    return 0;
+  }
+  if (item.type === 'Recurring') {
+    return recurringDurationMonths;
+  }
+  if (item.type === 'One time') {
+    return 1;
+  }
+  return calculateDailyRateContractDurationDays(item);
 }
 
 export function calculateBasicDiscountPerUnit(
@@ -346,18 +435,26 @@ export function calculateBasicDiscountRatio(
 export function calculateSingleProductMetrics(
   rawItem: ProductItem,
   itemIndex: number,
+  contractEndDate: DateObject,
   recurringDurationMonths: number
 ): CalculatedProductItem {
-  const isUsed = rawItem.price !== '';
+  const status: ProductStatus = rawItem.status || 'Production';
+  const hasPrice = rawItem.price !== '';
+  const isUsed = hasPrice && !isProductStatusDeleted(status);
+  const isBillable = isUsed && isProductStatusBillable(status);
   const unit: UnitType = rawItem.unit || 'Unit';
   const basicDiscountType = rawItem.basicDiscountType || 'Percentage';
   const additionalDiscountType = rawItem.additionalDiscountType || 'Amount';
   const basicDiscountValue = Number(rawItem.basicDiscountValue) || 0;
   const additionalDiscountValue = Number(rawItem.additionalDiscountValue) || 0;
+  const effectiveEndDate = resolveProductEffectiveEndDate(rawItem, contractEndDate);
 
   const emptyItem: CalculatedProductItem = {
     id: rawItem.id,
     name: rawItem.name,
+    status,
+    terminateDate: rawItem.terminateDate || '',
+    effectiveEndDate,
     type: rawItem.type,
     unit,
     price: 0,
@@ -378,6 +475,7 @@ export function calculateSingleProductMetrics(
     dailyRateStartDate: rawItem.dailyRateStartDate,
     dailyRateEndDate: rawItem.dailyRateEndDate,
     isUsed,
+    isBillable,
     originalIndex: itemIndex,
     periodRows: []
   };
@@ -386,7 +484,7 @@ export function calculateSingleProductMetrics(
 
   const price = roundByUnitType(Number(rawItem.price) || 0, unit);
   const quantity = Number(rawItem.quantity) || 0;
-  const duration = calculateProductDuration(rawItem, recurringDurationMonths);
+  const duration = calculateProductContractDuration(rawItem, recurringDurationMonths);
   const basicDiscountPerUnit = calculateBasicDiscountPerUnit(price, basicDiscountType, basicDiscountValue, unit);
   const netPricePerUnit = calculateNetPricePerUnit(price, basicDiscountPerUnit, unit);
   const totalBasicDiscount = calculateTotalBasicDiscount(basicDiscountPerUnit, quantity, duration, unit);
@@ -441,40 +539,127 @@ export function createEmptyPeriodRow(): CalculatedProductPeriodRow {
     totalBasicDiscount: 0,
     totalAfterBasicDiscount: 0,
     additionalDiscountAmount: 0,
-    grandTotal: 0
+    grandTotal: 0,
+    activeDays: 0,
+    proRataFactor: 0,
+    isLastActivePeriod: false
   };
 }
 
-export function calculateFullAllocationPeriodRow(item: CalculatedProductItem): CalculatedProductPeriodRow {
+export function calculateOneTimeOrDailyRatePeriodRow(
+  item: CalculatedProductItem,
+  period: InvoicePeriod,
+  contractStartDate: DateObject
+): CalculatedProductPeriodRow {
+  if (item.type === 'One time') {
+    if (item.status === 'Terminate') {
+      if (!item.terminateDate) return createEmptyPeriodRow();
+      const terminateSerial = convertDateToSerialDays(parseDateString(item.terminateDate));
+      if (terminateSerial < convertDateToSerialDays(contractStartDate)) {
+        return createEmptyPeriodRow();
+      }
+    }
+    return {
+      unitPrice: item.price,
+      basicDiscountPerUnit: item.basicDiscountPerUnit,
+      netPricePerUnit: item.netPricePerUnit,
+      totalBasicDiscount: item.totalBasicDiscount,
+      totalAfterBasicDiscount: item.totalAfterBasicDiscount,
+      additionalDiscountAmount: item.additionalDiscountAmount,
+      grandTotal: item.grandTotal,
+      activeDays: period.days,
+      proRataFactor: 1,
+      activeStartDate: period.startDate,
+      activeEndDate: period.endDate,
+      isLastActivePeriod: true
+    };
+  }
+
+  const activeDrDays = calculateDailyRateActiveInvoiceDays(item);
+  if (activeDrDays <= 0) {
+    return createEmptyPeriodRow();
+  }
+
+  if (activeDrDays === item.duration) {
+    return {
+      unitPrice: item.price,
+      basicDiscountPerUnit: item.basicDiscountPerUnit,
+      netPricePerUnit: item.netPricePerUnit,
+      totalBasicDiscount: item.totalBasicDiscount,
+      totalAfterBasicDiscount: item.totalAfterBasicDiscount,
+      additionalDiscountAmount: item.additionalDiscountAmount,
+      grandTotal: item.grandTotal,
+      activeDays: activeDrDays,
+      proRataFactor: 1,
+      activeStartDate: period.startDate,
+      activeEndDate: period.endDate,
+      isLastActivePeriod: true
+    };
+  }
+
+  const totalBasicDiscount = calculateTotalBasicDiscount(
+    item.basicDiscountPerUnit,
+    item.quantity,
+    activeDrDays,
+    item.unit
+  );
+  const totalAfterBasicDiscount = calculateTotalAfterBasicDiscount(
+    item.price,
+    item.basicDiscountPerUnit,
+    item.quantity,
+    activeDrDays
+  );
+  const additionalDiscountAmount =
+    item.additionalDiscountType === 'Percentage'
+      ? calculateAdditionalDiscountAmount(
+          totalAfterBasicDiscount,
+          item.additionalDiscountType,
+          item.additionalDiscountValue
+        )
+      : item.duration > 0
+        ? roundToInteger((item.additionalDiscountAmount * activeDrDays) / item.duration)
+        : 0;
+  const grandTotal = calculateItemGrandTotal(totalAfterBasicDiscount, additionalDiscountAmount);
+
   return {
     unitPrice: item.price,
     basicDiscountPerUnit: item.basicDiscountPerUnit,
     netPricePerUnit: item.netPricePerUnit,
-    totalBasicDiscount: item.totalBasicDiscount,
-    totalAfterBasicDiscount: item.totalAfterBasicDiscount,
-    additionalDiscountAmount: item.additionalDiscountAmount,
-    grandTotal: item.grandTotal
+    totalBasicDiscount,
+    totalAfterBasicDiscount,
+    additionalDiscountAmount,
+    grandTotal,
+    activeDays: activeDrDays,
+    proRataFactor: roundToNineDecimals(activeDrDays / (item.duration || 1)),
+    activeStartDate: parseDateString(item.dailyRateStartDate),
+    activeEndDate: item.terminateDate ? parseDateString(item.terminateDate) : parseDateString(item.dailyRateEndDate),
+    isLastActivePeriod: true
   };
 }
 
 export function calculateRecurringPeriodRow(
   item: CalculatedProductItem,
-  period: InvoicePeriod,
+  periodStartDate: DateObject,
+  activeEndDate: DateObject,
+  activeDays: number,
+  periodProRataFactor: number,
+  shouldAbsorbFullContractRemainder: boolean,
+  isLastActivePeriod: boolean,
   cumulativeBasicDiscount: number,
   cumulativeTotalAfterBasic: number,
   cumulativeAdditionalDiscount: number,
   cumulativeGrandTotal: number
 ): CalculatedProductPeriodRow {
-  if (!item.duration) return createEmptyPeriodRow();
+  if (!item.duration || activeDays <= 0) return createEmptyPeriodRow();
 
-  const unitPrice = roundByUnitType(item.price * period.proRataFactor, item.unit);
+  const unitPrice = roundByUnitType(item.price * periodProRataFactor, item.unit);
   const basicDiscountPerUnit =
     item.basicDiscountType === 'Percentage'
       ? roundByUnitType((unitPrice * item.basicDiscountValue) / 100, item.unit)
-      : roundByUnitType(item.basicDiscountPerUnit * period.proRataFactor, item.unit);
+      : roundByUnitType(item.basicDiscountPerUnit * periodProRataFactor, item.unit);
   const netPricePerUnit = roundByUnitType(unitPrice - basicDiscountPerUnit, item.unit);
 
-  if (period.isLastPeriod) {
+  if (shouldAbsorbFullContractRemainder) {
     return {
       unitPrice,
       basicDiscountPerUnit,
@@ -482,14 +667,19 @@ export function calculateRecurringPeriodRow(
       totalBasicDiscount: roundByUnitType(item.totalBasicDiscount - cumulativeBasicDiscount, item.unit),
       totalAfterBasicDiscount: item.totalAfterBasicDiscount - cumulativeTotalAfterBasic,
       additionalDiscountAmount: item.additionalDiscountAmount - cumulativeAdditionalDiscount,
-      grandTotal: item.grandTotal - cumulativeGrandTotal
+      grandTotal: item.grandTotal - cumulativeGrandTotal,
+      activeDays,
+      proRataFactor: periodProRataFactor,
+      activeStartDate: periodStartDate,
+      activeEndDate,
+      isLastActivePeriod
     };
   }
 
   const totalBasicDiscount = roundByUnitType(basicDiscountPerUnit * item.quantity, item.unit);
   const totalAfterBasicDiscount = roundToInteger(netPricePerUnit * item.quantity);
   const additionalDiscountAmount = roundToInteger(
-    (item.additionalDiscountAmount * period.proRataFactor) / item.duration
+    (item.additionalDiscountAmount * periodProRataFactor) / item.duration
   );
   const grandTotal = roundToInteger(totalAfterBasicDiscount - additionalDiscountAmount);
 
@@ -500,32 +690,79 @@ export function calculateRecurringPeriodRow(
     totalBasicDiscount,
     totalAfterBasicDiscount,
     additionalDiscountAmount,
-    grandTotal
+    grandTotal,
+    activeDays,
+    proRataFactor: periodProRataFactor,
+    activeStartDate: periodStartDate,
+    activeEndDate,
+    isLastActivePeriod
   };
 }
 
 export function allocateProductToBillingPeriods(
   item: CalculatedProductItem,
-  billingPeriods: InvoicePeriod[]
+  billingPeriods: InvoicePeriod[],
+  contractStartDate: DateObject,
+  contractEndDate: DateObject,
+  prorataBasis = 30
 ): void {
   item.periodRows = [];
+
+  if (!item.isBillable || item.duration <= 0) {
+    billingPeriods.forEach(() => {
+      item.periodRows.push(createEmptyPeriodRow());
+    });
+    return;
+  }
+
   let cumulativeTotalAfterBasic = 0;
   let cumulativeAdditionalDiscount = 0;
   let cumulativeBasicDiscount = 0;
   let cumulativeGrandTotal = 0;
 
   const dailyRateTargetIndex = findTargetInvoiceIndexForDailyRate(item, billingPeriods);
+  const effectiveEndSerial = item.effectiveEndDate
+    ? convertDateToSerialDays(item.effectiveEndDate)
+    : -1;
+  const contractEndSerial = convertDateToSerialDays(contractEndDate);
+  const reachesFullContractEnd = effectiveEndSerial >= contractEndSerial;
 
   billingPeriods.forEach((period, periodIndex) => {
     if (item.type === 'Recurring') {
+      const periodStartSerial = convertDateToSerialDays(period.startDate);
+      const periodEndSerial = convertDateToSerialDays(period.endDate);
+
+      if (effectiveEndSerial < periodStartSerial) {
+        item.periodRows.push(createEmptyPeriodRow());
+        return;
+      }
+
+      const activeEndSerial = Math.min(periodEndSerial, effectiveEndSerial);
+      const activeEndDate = convertSerialDaysToDate(activeEndSerial);
+      const isLastActivePeriod = activeEndSerial === effectiveEndSerial;
+      const shouldAbsorbFullContractRemainder = period.isLastPeriod && reachesFullContractEnd;
+      const isFullPeriod = activeEndSerial === periodEndSerial;
+      const activeDays = isFullPeriod
+        ? period.days
+        : calculateDays360Between(period.startDate, activeEndDate);
+      const periodProRataFactor = isFullPeriod
+        ? period.proRataFactor
+        : calculateProRataFactor(activeDays, prorataBasis);
+
       const recurringRow = calculateRecurringPeriodRow(
         item,
-        period,
+        period.startDate,
+        activeEndDate,
+        activeDays,
+        periodProRataFactor,
+        shouldAbsorbFullContractRemainder,
+        isLastActivePeriod,
         cumulativeBasicDiscount,
         cumulativeTotalAfterBasic,
         cumulativeAdditionalDiscount,
         cumulativeGrandTotal
       );
+
       cumulativeTotalAfterBasic += recurringRow.totalAfterBasicDiscount;
       cumulativeAdditionalDiscount += recurringRow.additionalDiscountAmount;
       cumulativeBasicDiscount = roundByUnitType(
@@ -542,7 +779,7 @@ export function allocateProductToBillingPeriods(
       (item.type === 'DR (Daily)' && periodIndex === dailyRateTargetIndex);
 
     if (shouldBillInThisPeriod) {
-      item.periodRows.push(calculateFullAllocationPeriodRow(item));
+      item.periodRows.push(calculateOneTimeOrDailyRatePeriodRow(item, period, contractStartDate));
     } else {
       item.periodRows.push(createEmptyPeriodRow());
     }
@@ -856,6 +1093,15 @@ export function buildInvoiceSummaryTableRows(
   ];
 }
 
+export type ProductPeriodDisplayKey =
+  | 'unitPrice'
+  | 'basicDiscountPerUnit'
+  | 'totalBasicDiscount'
+  | 'netPricePerUnit'
+  | 'totalAfterBasicDiscount'
+  | 'additionalDiscountAmount'
+  | 'grandTotal';
+
 export function buildProductBreakdownTableRows(
   item: CalculatedProductItem,
   calculation: CalculationResult,
@@ -864,7 +1110,7 @@ export function buildProductBreakdownTableRows(
 ): TableDisplayRow[] {
   const metricDefinitions: [
     string,
-    keyof CalculatedProductPeriodRow,
+    ProductPeriodDisplayKey,
     keyof CalculatedProductItem
   ][] = [
     ['Price per unit', 'unitPrice', 'price'],
@@ -876,7 +1122,7 @@ export function buildProductBreakdownTableRows(
     ['Item grand total', 'grandTotal', 'grandTotal']
   ];
 
-  const summableKeys: (keyof CalculatedProductPeriodRow)[] = [
+  const summableKeys: ProductPeriodDisplayKey[] = [
     'totalBasicDiscount',
     'totalAfterBasicDiscount',
     'additionalDiscountAmount',
@@ -915,6 +1161,29 @@ export function buildProductBreakdownTableRows(
   });
 }
 
+export function collectProductStatusWarnings(
+  items: ProductItem[],
+  contractStartDate: DateObject
+): string[] {
+  const statusWarnings: string[] = [];
+  const startSerial = convertDateToSerialDays(contractStartDate);
+
+  items.forEach((item, index) => {
+    if (item.price === '' || item.status !== 'Terminate') return;
+    const itemLabel = item.name || `Product #${index + 1}`;
+    if (!item.terminateDate) {
+      statusWarnings.push(`${itemLabel}: status is Terminate but Terminate Date is empty`);
+      return;
+    }
+    const terminateSerial = convertDateToSerialDays(parseDateString(item.terminateDate));
+    if (terminateSerial < startSerial) {
+      statusWarnings.push(`${itemLabel}: Terminate Date (${item.terminateDate}) is before subscription start`);
+    }
+  });
+
+  return statusWarnings;
+}
+
 export function collectInvoiceReconciliationWarnings(
   calculation: CalculationResult,
   invoiceSummaryRows: TableDisplayRow[]
@@ -939,6 +1208,8 @@ export function createNewEmptyProductItem(): ProductItem {
   return {
     id: Math.random().toString(36).slice(2, 9),
     name: '',
+    status: 'Production',
+    terminateDate: '',
     type: 'Recurring',
     unit: 'Unit',
     price: '',
@@ -978,13 +1249,21 @@ export function calculateInvoiceSchedule(state: InvoiceCalculatorState): Calcula
     warnings.push(periodWarning);
   }
 
+  const productStatusWarnings = collectProductStatusWarnings(state.items, startDate);
+  warnings.push(...productStatusWarnings);
+
   const allCalculatedItems: CalculatedProductItem[] = state.items.map((rawItem, itemIndex) =>
-    calculateSingleProductMetrics(rawItem, itemIndex, recurringDurationMonths)
+    calculateSingleProductMetrics(
+      rawItem,
+      itemIndex,
+      endDate,
+      recurringDurationMonths
+    )
   );
   const activeCalculatedItems = allCalculatedItems.filter(item => item.isUsed);
 
   activeCalculatedItems.forEach(item => {
-    allocateProductToBillingPeriods(item, billingPeriods);
+    allocateProductToBillingPeriods(item, billingPeriods, startDate, endDate, prorataBasis);
   });
 
   const { salesOrderSummary, invoiceColumns } = calculateInvoiceFinancialSummaries(

@@ -9,11 +9,13 @@ import {
   FiChevronDown,
   FiChevronRight,
   FiSun,
-  FiMoon
+  FiMoon,
+  FiSlash
 } from 'react-icons/fi';
 
 import type {
   ProductItem,
+  ProductStatus,
   InvoiceCalculatorState,
   ProductType,
   DiscountType,
@@ -30,13 +32,16 @@ import {
   buildInvoiceSummaryTableRows,
   buildProductBreakdownTableRows,
   collectInvoiceReconciliationWarnings,
-  createNewEmptyProductItem
+  createNewEmptyProductItem,
+  applyTerminateAllToProductList,
+  canApplyTerminateAllToProduct
 } from './utils/calculator';
 import { DateInput } from './components/DateInput';
 import { FormInput } from './components/FormInput';
 import { CalculationTrace } from './components/CalculationTrace';
 
 const PRODUCT_TYPES: ProductType[] = ['One time', 'Recurring', 'DR (Daily)'];
+const PRODUCT_STATUSES: ProductStatus[] = ['Production', 'Suspend', 'Terminate', 'Delete'];
 const UNIT_TYPES: UnitType[] = ['Unit', 'GB'];
 const DISCOUNT_TYPES: DiscountType[] = ['Amount', 'Percentage'];
 const BILLING_FREQUENCIES: BillingFrequency[] = ['Monthly', 'Quarterly', 'Semester', 'Yearly'];
@@ -45,6 +50,8 @@ const INITIAL_PRODUCT_ITEMS: ProductItem[] = [
   {
     id: '1',
     name: 'test 1',
+    status: 'Production',
+    terminateDate: '',
     type: 'One time',
     unit: 'Unit',
     price: '123125',
@@ -60,6 +67,8 @@ const INITIAL_PRODUCT_ITEMS: ProductItem[] = [
   {
     id: '2',
     name: 'test gb one',
+    status: 'Production',
+    terminateDate: '',
     type: 'One time',
     unit: 'GB',
     price: '1259.49',
@@ -75,6 +84,8 @@ const INITIAL_PRODUCT_ITEMS: ProductItem[] = [
   {
     id: '3',
     name: 'test 2',
+    status: 'Production',
+    terminateDate: '',
     type: 'Recurring',
     unit: 'Unit',
     price: '100557',
@@ -90,6 +101,8 @@ const INITIAL_PRODUCT_ITEMS: ProductItem[] = [
   {
     id: '4',
     name: 'test gb recu',
+    status: 'Production',
+    terminateDate: '',
     type: 'Recurring',
     unit: 'GB',
     price: '1827.77',
@@ -114,6 +127,19 @@ function getInitialThemeMode(): ThemeMode {
   return 'light';
 }
 
+function getStatusBadgeClasses(status: ProductStatus): string {
+  if (status === 'Production') {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800';
+  }
+  if (status === 'Suspend') {
+    return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800';
+  }
+  if (status === 'Terminate') {
+    return 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800';
+  }
+  return 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
+}
+
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(getInitialThemeMode);
   const [currentPage, setCurrentPage] = useState<'generator' | 'trace'>('generator');
@@ -127,6 +153,7 @@ export default function App() {
     deductedTaxRatePercent: '0',
     targetCurrency: '',
     exchangeRate: '1',
+    terminateAllDate: '2026-12-31',
     items: INITIAL_PRODUCT_ITEMS
   });
 
@@ -150,8 +177,35 @@ export default function App() {
   function updateProductItemField(index: number, field: keyof ProductItem, value: string) {
     setState(previous => {
       const updatedItems = [...previous.items];
-      updatedItems[index] = { ...updatedItems[index], [field]: value };
+      const currentItem = updatedItems[index];
+
+      if (field === 'status') {
+        const nextStatus = value as ProductStatus;
+        const shouldInitializeTerminateDate =
+          nextStatus === 'Terminate' && !currentItem.terminateDate;
+        updatedItems[index] = {
+          ...currentItem,
+          status: nextStatus,
+          terminateDate: shouldInitializeTerminateDate
+            ? previous.terminateAllDate || previous.endDate
+            : currentItem.terminateDate
+        };
+      } else {
+        updatedItems[index] = { ...currentItem, [field]: value };
+      }
+
       return { ...previous, items: updatedItems };
+    });
+  }
+
+  function handleTerminateAllProducts() {
+    setState(previous => {
+      const targetTerminateDate = previous.terminateAllDate || previous.endDate;
+      return {
+        ...previous,
+        terminateAllDate: targetTerminateDate,
+        items: applyTerminateAllToProductList(previous.items, targetTerminateDate)
+      };
     });
   }
 
@@ -189,10 +243,15 @@ export default function App() {
     [calculation, invoiceSummaryRows]
   );
 
-  const inputClass =
-    'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-300 dark:focus:ring-slate-600 focus:border-gray-300 dark:focus:border-slate-600 outline-none transition text-gray-900 dark:text-slate-100 shadow-[0_1px_2px_rgba(0,0,0,0.02)] w-full placeholder-gray-300 dark:placeholder-slate-500 hover:border-gray-300 dark:hover:border-slate-600';
-  const selectClass =
-    'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-300 dark:focus:ring-slate-600 focus:border-gray-300 dark:focus:border-slate-600 outline-none transition text-gray-900 dark:text-slate-100 shadow-[0_1px_2px_rgba(0,0,0,0.02)] w-full hover:border-gray-300 dark:hover:border-slate-600 cursor-pointer';
+  const eligibleForTerminateAllCount = useMemo(
+    () => state.items.filter(canApplyTerminateAllToProduct).length,
+    [state.items]
+  );
+
+  const baseFieldClass =
+    'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-300 dark:focus:ring-slate-600 focus:border-gray-300 dark:focus:border-slate-600 outline-none transition text-gray-900 dark:text-slate-100 shadow-[0_1px_2px_rgba(0,0,0,0.02)] placeholder-gray-300 dark:placeholder-slate-500 hover:border-gray-300 dark:hover:border-slate-600';
+  const inputClass = `${baseFieldClass} w-full`;
+  const selectClass = `${baseFieldClass} w-full cursor-pointer`;
 
   if (currentPage === 'trace') {
     return (
@@ -344,12 +403,43 @@ export default function App() {
         </section>
 
         <section className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-[0_2px_8px_rgba(0,0,0,0.04)] transition-colors">
-          <h2 className="text-lg font-medium mb-6 text-gray-800 dark:text-slate-100 flex items-center gap-3">
-            <span className="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold border border-gray-200 dark:border-slate-700">
-              2
-            </span>
-            Products List
-          </h2>
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+            <h2 className="text-lg font-medium text-gray-800 dark:text-slate-100 flex items-center gap-3">
+              <span className="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold border border-gray-200 dark:border-slate-700">
+                2
+              </span>
+              Products List
+            </h2>
+
+            <div className="flex flex-wrap items-center gap-3 bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 rounded-xl p-3">
+              <div className="flex flex-col">
+                <span className="text-xs font-semibold text-rose-800 dark:text-rose-300">
+                  Terminate All Products
+                </span>
+                <span className="text-[11px] text-rose-600/80 dark:text-rose-400/80">
+                  Hanya mengubah status Production & Suspend (Terminate lama & Delete tidak ter-override)
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <DateInput
+                  className={inputClass + ' !py-1.5 text-xs bg-white dark:bg-slate-900'}
+                  value={state.terminateAllDate}
+                  onChange={event => updateGlobalParameter('terminateAllDate', event.target.value)}
+                  style={{ width: '145px' }}
+                  placeholder="Terminate Date"
+                />
+                <button
+                  type="button"
+                  onClick={handleTerminateAllProducts}
+                  disabled={eligibleForTerminateAllCount === 0}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-xs"
+                >
+                  <FiSlash size={13} />
+                  <span>Terminate All ({eligibleForTerminateAllCount})</span>
+                </button>
+              </div>
+            </div>
+          </div>
 
           <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-gray-50 dark:bg-slate-800/60 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
@@ -380,33 +470,42 @@ export default function App() {
           </div>
 
           <div className="overflow-x-auto border border-gray-200 dark:border-slate-800 rounded-xl mb-6 shadow-sm">
-            <table className="w-full text-sm text-left whitespace-nowrap">
+            <table className="w-full min-w-[1800px] text-sm text-left whitespace-nowrap">
               <thead className="text-xs text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-800/80 border-b border-gray-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-4 py-3.5 font-medium">Product Name</th>
-                  <th className="px-4 py-3.5 font-medium min-w-[130px]">Type</th>
-                  <th className="px-4 py-3.5 font-medium min-w-[90px]">Unit</th>
-                  <th className="px-4 py-3.5 font-medium">Price / unit</th>
-                  <th className="px-4 py-3.5 font-medium min-w-[170px]">Basic Discount</th>
-                  <th className="px-4 py-3.5 font-medium w-24">Qty</th>
-                  <th className="px-4 py-3.5 font-medium min-w-[140px]">DR Date Range</th>
-                  <th className="px-4 py-3.5 font-medium min-w-[170px]">Addt'l Discount</th>
-                  <th className="px-4 py-3.5 font-medium text-right min-w-[120px]">Calc. Total</th>
-                  <th className="px-4 py-3.5"></th>
+                  <th className="px-4 py-3.5 font-medium w-[195px]">Product Name</th>
+                  <th className="px-4 py-3.5 font-medium w-[175px]">Status</th>
+                  <th className="px-4 py-3.5 font-medium w-[145px]">Type</th>
+                  <th className="px-4 py-3.5 font-medium w-[105px]">Unit</th>
+                  <th className="px-4 py-3.5 font-medium w-[160px]">Price / unit</th>
+                  <th className="px-4 py-3.5 font-medium w-[210px]">Basic Discount</th>
+                  <th className="px-4 py-3.5 font-medium w-[140px]">Qty</th>
+                  <th className="px-4 py-3.5 font-medium w-[170px]">DR Date Range</th>
+                  <th className="px-4 py-3.5 font-medium w-[210px]">Addt'l Discount</th>
+                  <th className="px-4 py-3.5 font-medium text-right w-[150px]">Calc. Total (SO)</th>
+                  <th className="px-4 py-3.5 w-[60px]"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                 {state.items.map((item, itemIndex) => {
                   const calculatedItem = calculation.allCalculatedItems[itemIndex];
+                  const isDeleted = item.status === 'Delete';
+                  const isTerminated = item.status === 'Terminate';
+                  const invoicedItemTotal = calculatedItem?.periodRows.reduce(
+                    (sum, row) => sum + (Number(row.grandTotal) || 0),
+                    0
+                  );
 
                   return (
                     <tr
                       key={item.id}
-                      className="bg-white dark:bg-slate-900 hover:bg-gray-50/50 dark:hover:bg-slate-800/40 transition-colors group"
+                      className={`bg-white dark:bg-slate-900 hover:bg-gray-50/50 dark:hover:bg-slate-800/40 transition-colors group ${
+                        isDeleted ? 'opacity-55 bg-gray-50/60 dark:bg-slate-900/50' : ''
+                      }`}
                     >
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 align-top">
                         <input
-                          className={inputClass}
+                          className={`${baseFieldClass} w-[175px] ${isDeleted ? 'line-through text-gray-400' : ''}`}
                           value={item.name}
                           onChange={event =>
                             updateProductItemField(itemIndex, 'name', event.target.value)
@@ -414,9 +513,52 @@ export default function App() {
                           placeholder="Name"
                         />
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 align-top">
+                        <div className="flex flex-col gap-1.5 w-[155px]">
+                          <select
+                            className={`${baseFieldClass} w-full cursor-pointer font-medium ${getStatusBadgeClasses(item.status)}`}
+                            value={item.status || 'Production'}
+                            onChange={event =>
+                              updateProductItemField(
+                                itemIndex,
+                                'status',
+                                event.target.value as ProductStatus
+                              )
+                            }
+                          >
+                            {PRODUCT_STATUSES.map(statusOption => (
+                              <option
+                                key={statusOption}
+                                value={statusOption}
+                                className="bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                              >
+                                {statusOption}
+                              </option>
+                            ))}
+                          </select>
+                          {isTerminated && (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[10px] font-medium text-rose-600 dark:text-rose-400">
+                                Terminate Date:
+                              </span>
+                              <DateInput
+                                className={`${baseFieldClass} w-full !py-1 text-[12px] border-rose-200 dark:border-rose-800`}
+                                value={item.terminateDate}
+                                onChange={event =>
+                                  updateProductItemField(
+                                    itemIndex,
+                                    'terminateDate',
+                                    event.target.value
+                                  )
+                                }
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 align-top">
                         <select
-                          className={selectClass}
+                          className={`${baseFieldClass} w-[130px] cursor-pointer`}
                           value={item.type}
                           onChange={event =>
                             updateProductItemField(
@@ -433,9 +575,9 @@ export default function App() {
                           ))}
                         </select>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 align-top">
                         <select
-                          className={selectClass}
+                          className={`${baseFieldClass} w-[90px] cursor-pointer`}
                           value={item.unit || 'Unit'}
                           onChange={event =>
                             updateProductItemField(itemIndex, 'unit', event.target.value as UnitType)
@@ -448,21 +590,21 @@ export default function App() {
                           ))}
                         </select>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 align-top">
                         <input
                           type="text"
                           inputMode="decimal"
-                          className={inputClass}
+                          className={`${baseFieldClass} w-[140px]`}
                           value={item.price}
                           onChange={event =>
                             updateProductItemField(itemIndex, 'price', event.target.value)
                           }
                         />
                       </td>
-                      <td className="px-3 py-3">
-                        <div className="flex gap-1.5">
+                      <td className="px-3 py-3 align-top">
+                        <div className="flex items-center gap-1.5 w-[190px]">
                           <select
-                            className={selectClass + ' !px-2 w-[70px]'}
+                            className={`${baseFieldClass} !px-2 w-[64px] shrink-0 cursor-pointer`}
                             value={item.basicDiscountType}
                             onChange={event =>
                               updateProductItemField(
@@ -481,7 +623,7 @@ export default function App() {
                           <input
                             type="text"
                             inputMode="decimal"
-                            className={inputClass + ' w-[90px]'}
+                            className={`${baseFieldClass} w-[118px] shrink-0`}
                             value={item.basicDiscountValue}
                             onChange={event =>
                               updateProductItemField(
@@ -499,21 +641,21 @@ export default function App() {
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 align-top">
                         <input
                           type="text"
                           inputMode="decimal"
-                          className={inputClass}
+                          className={`${baseFieldClass} w-[120px]`}
                           value={item.quantity}
                           onChange={event =>
                             updateProductItemField(itemIndex, 'quantity', event.target.value)
                           }
                         />
                       </td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-col gap-1.5">
+                      <td className="px-3 py-3 align-top">
+                        <div className="flex flex-col gap-1.5 w-[150px]">
                           <DateInput
-                            className={inputClass + ' !py-1 text-[13px]'}
+                            className={`${baseFieldClass} w-full !py-1 text-[13px]`}
                             value={item.dailyRateStartDate}
                             onChange={event =>
                               updateProductItemField(
@@ -522,10 +664,9 @@ export default function App() {
                                 event.target.value
                               )
                             }
-                            style={{ width: '130px' }}
                           />
                           <DateInput
-                            className={inputClass + ' !py-1 text-[13px]'}
+                            className={`${baseFieldClass} w-full !py-1 text-[13px]`}
                             value={item.dailyRateEndDate}
                             onChange={event =>
                               updateProductItemField(
@@ -534,14 +675,13 @@ export default function App() {
                                 event.target.value
                               )
                             }
-                            style={{ width: '130px' }}
                           />
                         </div>
                       </td>
-                      <td className="px-3 py-3">
-                        <div className="flex gap-1.5">
+                      <td className="px-3 py-3 align-top">
+                        <div className="flex items-center gap-1.5 w-[190px]">
                           <select
-                            className={selectClass + ' !px-2 w-[70px]'}
+                            className={`${baseFieldClass} !px-2 w-[64px] shrink-0 cursor-pointer`}
                             value={item.additionalDiscountType}
                             onChange={event =>
                               updateProductItemField(
@@ -560,7 +700,7 @@ export default function App() {
                           <input
                             type="text"
                             inputMode="decimal"
-                            className={inputClass + ' w-[90px]'}
+                            className={`${baseFieldClass} w-[118px] shrink-0`}
                             value={item.additionalDiscountValue}
                             onChange={event =>
                               updateProductItemField(
@@ -578,10 +718,25 @@ export default function App() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono font-medium text-gray-800 dark:text-slate-200">
-                        {calculatedItem?.isUsed ? formatDisplayNumber(calculatedItem.grandTotal) : '-'}
+                      <td className="px-4 py-3 align-top text-right font-mono font-medium text-gray-800 dark:text-slate-200">
+                        {isDeleted ? (
+                          <span className="text-xs italic text-gray-400 dark:text-slate-500">
+                            Deleted
+                          </span>
+                        ) : calculatedItem?.isUsed ? (
+                          <div>
+                            <div>{formatDisplayNumber(calculatedItem.grandTotal)}</div>
+                            {isTerminated && invoicedItemTotal !== undefined && (
+                              <div className="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5">
+                                Inv: {formatDisplayNumber(invoicedItemTotal)}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          '-'
+                        )}
                       </td>
-                      <td className="px-3 py-3 text-center">
+                      <td className="px-3 py-3 align-top text-center">
                         <button
                           onClick={() => handleRemoveProductItem(itemIndex)}
                           className="text-gray-400 dark:text-slate-500 hover:text-gray-800 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 p-2 rounded-lg transition-colors cursor-pointer"
@@ -607,7 +762,7 @@ export default function App() {
           <p className="mt-6 text-xs text-gray-400 dark:text-slate-500 flex gap-2 font-normal">
             <FiInfo className="shrink-0 mt-0.5" />
             <span>
-              Recurring duration is automatic from start/end. One time = billed in INV 1. DR = price × qty × days. Unit GB = unrounded (2 decimal places), Unit non-GB = rounded to integer. Rows without a price are ignored.
+              Status Production & Suspend ditagihkan penuh. Status Terminate ditagihkan prorata sampai Terminate Date (SO tetap penuh). Status Delete diabaikan dari seluruh perhitungan. Terminate All hanya mengubah item Production & Suspend tanpa meng-override Terminate lama maupun Delete.
             </span>
           </p>
         </section>
@@ -768,6 +923,16 @@ export default function App() {
                       <summary className="px-5 py-4 cursor-pointer font-medium text-gray-800 dark:text-slate-100 bg-gray-50 dark:bg-slate-800/70 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-between">
                         <span className="flex items-center gap-3 flex-wrap">
                           <span>{item.name || '(No name)'}</span>
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-md border font-medium ${getStatusBadgeClasses(
+                              item.status
+                            )}`}
+                          >
+                            {item.status}
+                            {item.status === 'Terminate' && item.terminateDate
+                              ? ` (${item.terminateDate})`
+                              : ''}
+                          </span>
                           <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-slate-600"></span>
                           <span className="text-sm font-normal text-gray-500 dark:text-slate-400">
                             {item.type}
