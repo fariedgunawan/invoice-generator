@@ -60,6 +60,7 @@ export interface CalculatedProductPeriodRow {
   grandTotal: number;
   activeDays: number;
   proRataFactor: number;
+  isUnitPriceProrated?: boolean;
   activeStartDate?: DateObject;
   activeEndDate?: DateObject;
   isLastActivePeriod?: boolean;

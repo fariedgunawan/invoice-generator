@@ -38,7 +38,7 @@ export function roundToInteger(value: number): number {
 }
 
 export function roundToTwoDecimals(value: number): number {
-  return Number(value.toFixed(2));
+  return Number(`${Math.round(Number(`${value}e2`))}e-2`);
 }
 
 export function roundToNineDecimals(value: number): number {
@@ -643,6 +643,7 @@ export function calculateRecurringPeriodRow(
   activeEndDate: DateObject,
   activeDays: number,
   periodProRataFactor: number,
+  shouldProrateUnitPrice: boolean,
   shouldAbsorbFullContractRemainder: boolean,
   isLastActivePeriod: boolean,
   cumulativeBasicDiscount: number,
@@ -652,12 +653,19 @@ export function calculateRecurringPeriodRow(
 ): CalculatedProductPeriodRow {
   if (!item.duration || activeDays <= 0) return createEmptyPeriodRow();
 
-  const unitPrice = roundByUnitType(item.price * periodProRataFactor, item.unit);
-  const basicDiscountPerUnit =
-    item.basicDiscountType === 'Percentage'
-      ? roundByUnitType((unitPrice * item.basicDiscountValue) / 100, item.unit)
-      : roundByUnitType(item.basicDiscountPerUnit * periodProRataFactor, item.unit);
-  const netPricePerUnit = roundByUnitType(unitPrice - basicDiscountPerUnit, item.unit);
+  const unitPrice = shouldProrateUnitPrice
+    ? roundToTwoDecimals(item.price * periodProRataFactor)
+    : item.price;
+
+  const basicDiscountPerUnit = shouldProrateUnitPrice
+    ? item.basicDiscountType === 'Percentage'
+      ? roundToTwoDecimals((unitPrice * item.basicDiscountValue) / 100)
+      : roundToTwoDecimals(item.basicDiscountPerUnit * periodProRataFactor)
+    : item.basicDiscountPerUnit;
+
+  const netPricePerUnit = shouldProrateUnitPrice
+    ? roundToTwoDecimals(unitPrice - basicDiscountPerUnit)
+    : item.netPricePerUnit;
 
   if (shouldAbsorbFullContractRemainder) {
     return {
@@ -670,14 +678,21 @@ export function calculateRecurringPeriodRow(
       grandTotal: item.grandTotal - cumulativeGrandTotal,
       activeDays,
       proRataFactor: periodProRataFactor,
+      isUnitPriceProrated: shouldProrateUnitPrice,
       activeStartDate: periodStartDate,
       activeEndDate,
       isLastActivePeriod
     };
   }
 
-  const totalBasicDiscount = roundByUnitType(basicDiscountPerUnit * item.quantity, item.unit);
-  const totalAfterBasicDiscount = roundToInteger(netPricePerUnit * item.quantity);
+  const totalBasicDiscount = shouldProrateUnitPrice
+    ? roundByUnitType(basicDiscountPerUnit * item.quantity, item.unit)
+    : roundByUnitType(basicDiscountPerUnit * item.quantity * periodProRataFactor, item.unit);
+
+  const totalAfterBasicDiscount = shouldProrateUnitPrice
+    ? roundToInteger(netPricePerUnit * item.quantity)
+    : roundToInteger(netPricePerUnit * item.quantity * periodProRataFactor);
+
   const additionalDiscountAmount = roundToInteger(
     (item.additionalDiscountAmount * periodProRataFactor) / item.duration
   );
@@ -693,6 +708,7 @@ export function calculateRecurringPeriodRow(
     grandTotal,
     activeDays,
     proRataFactor: periodProRataFactor,
+    isUnitPriceProrated: shouldProrateUnitPrice,
     activeStartDate: periodStartDate,
     activeEndDate,
     isLastActivePeriod
@@ -704,6 +720,7 @@ export function allocateProductToBillingPeriods(
   billingPeriods: InvoicePeriod[],
   contractStartDate: DateObject,
   contractEndDate: DateObject,
+  billingFrequency = 'Monthly',
   prorataBasis = 30
 ): void {
   item.periodRows = [];
@@ -726,6 +743,7 @@ export function allocateProductToBillingPeriods(
     : -1;
   const contractEndSerial = convertDateToSerialDays(contractEndDate);
   const reachesFullContractEnd = effectiveEndSerial >= contractEndSerial;
+  const isMonthlyFrequency = billingFrequency === 'Monthly';
 
   billingPeriods.forEach((period, periodIndex) => {
     if (item.type === 'Recurring') {
@@ -742,6 +760,8 @@ export function allocateProductToBillingPeriods(
       const isLastActivePeriod = activeEndSerial === effectiveEndSerial;
       const shouldAbsorbFullContractRemainder = period.isLastPeriod && reachesFullContractEnd;
       const isFullPeriod = activeEndSerial === periodEndSerial;
+      const isTerminatedMidPeriod = item.status === 'Terminate' && !isFullPeriod;
+      const shouldProrateUnitPrice = isMonthlyFrequency || isTerminatedMidPeriod;
       const activeDays = isFullPeriod
         ? period.days
         : calculateDays360Between(period.startDate, activeEndDate);
@@ -755,6 +775,7 @@ export function allocateProductToBillingPeriods(
         activeEndDate,
         activeDays,
         periodProRataFactor,
+        shouldProrateUnitPrice,
         shouldAbsorbFullContractRemainder,
         isLastActivePeriod,
         cumulativeBasicDiscount,
@@ -1263,7 +1284,14 @@ export function calculateInvoiceSchedule(state: InvoiceCalculatorState): Calcula
   const activeCalculatedItems = allCalculatedItems.filter(item => item.isUsed);
 
   activeCalculatedItems.forEach(item => {
-    allocateProductToBillingPeriods(item, billingPeriods, startDate, endDate, prorataBasis);
+    allocateProductToBillingPeriods(
+      item,
+      billingPeriods,
+      startDate,
+      endDate,
+      state.billingFrequency,
+      prorataBasis
+    );
   });
 
   const { salesOrderSummary, invoiceColumns } = calculateInvoiceFinancialSummaries(

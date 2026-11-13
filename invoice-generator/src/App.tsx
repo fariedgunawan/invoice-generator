@@ -1,4 +1,4 @@
-import { Fragment, useState, useMemo, useEffect } from 'react';
+import { Fragment, useState, useMemo, useEffect } from "react";
 import {
   FiPlus,
   FiTrash2,
@@ -10,8 +10,8 @@ import {
   FiChevronRight,
   FiSun,
   FiMoon,
-  FiSlash
-} from 'react-icons/fi';
+  FiSlash,
+} from "react-icons/fi";
 
 import type {
   ProductItem,
@@ -22,8 +22,8 @@ import type {
   BillingFrequency,
   CalculatedProductItem,
   UnitType,
-  ThemeMode
-} from './types';
+  ThemeMode,
+} from "./types";
 import {
   calculateInvoiceSchedule,
   formatDisplayNumber,
@@ -34,161 +34,180 @@ import {
   collectInvoiceReconciliationWarnings,
   createNewEmptyProductItem,
   applyTerminateAllToProductList,
-  canApplyTerminateAllToProduct
-} from './utils/calculator';
-import { DateInput } from './components/DateInput';
-import { FormInput } from './components/FormInput';
-import { CalculationTrace } from './components/CalculationTrace';
+  canApplyTerminateAllToProduct,
+} from "./utils/calculator";
+import { DateInput } from "./components/DateInput";
+import { FormInput } from "./components/FormInput";
+import { CalculationTrace } from "./components/CalculationTrace";
 
-const PRODUCT_TYPES: ProductType[] = ['One time', 'Recurring', 'DR (Daily)'];
-const PRODUCT_STATUSES: ProductStatus[] = ['Production', 'Suspend', 'Terminate', 'Delete'];
-const UNIT_TYPES: UnitType[] = ['Unit', 'GB'];
-const DISCOUNT_TYPES: DiscountType[] = ['Amount', 'Percentage'];
-const BILLING_FREQUENCIES: BillingFrequency[] = ['Monthly', 'Quarterly', 'Semester', 'Yearly'];
+const PRODUCT_TYPES: ProductType[] = ["One time", "Recurring", "DR (Daily)"];
+const PRODUCT_STATUSES: ProductStatus[] = [
+  "Production",
+  "Suspend",
+  "Terminate",
+  "Delete",
+];
+const UNIT_TYPES: UnitType[] = ["Unit", "GB"];
+const DISCOUNT_TYPES: DiscountType[] = ["Amount", "Percentage"];
+const BILLING_FREQUENCIES: BillingFrequency[] = [
+  "Monthly",
+  "Quarterly",
+  "Semester",
+  "Yearly",
+];
 
 const INITIAL_PRODUCT_ITEMS: ProductItem[] = [
   {
-    id: '1',
-    name: 'test 1',
-    status: 'Production',
-    terminateDate: '',
-    type: 'One time',
-    unit: 'Unit',
-    price: '123125',
-    basicDiscountType: 'Percentage',
-    basicDiscountValue: '23.13',
-    quantity: '2',
-    dailyRateStartDate: '',
-    dailyRateEndDate: '',
-    additionalDiscountType: 'Percentage',
-    additionalDiscountValue: '12.51',
-    salesOrderExpectedTotal: ''
+    id: "1",
+    name: "test 1",
+    status: "Production",
+    terminateDate: "",
+    type: "One time",
+    unit: "Unit",
+    price: "123125",
+    basicDiscountType: "Percentage",
+    basicDiscountValue: "23.13",
+    quantity: "2",
+    dailyRateStartDate: "",
+    dailyRateEndDate: "",
+    additionalDiscountType: "Percentage",
+    additionalDiscountValue: "12.51",
+    salesOrderExpectedTotal: "",
   },
   {
-    id: '2',
-    name: 'test gb one',
-    status: 'Production',
-    terminateDate: '',
-    type: 'One time',
-    unit: 'GB',
-    price: '1259.49',
-    basicDiscountType: 'Percentage',
-    basicDiscountValue: '11.57',
-    quantity: '157',
-    dailyRateStartDate: '',
-    dailyRateEndDate: '',
-    additionalDiscountType: 'Percentage',
-    additionalDiscountValue: '10.11',
-    salesOrderExpectedTotal: ''
+    id: "2",
+    name: "test gb one",
+    status: "Production",
+    terminateDate: "",
+    type: "One time",
+    unit: "GB",
+    price: "1259.49",
+    basicDiscountType: "Percentage",
+    basicDiscountValue: "11.57",
+    quantity: "157",
+    dailyRateStartDate: "",
+    dailyRateEndDate: "",
+    additionalDiscountType: "Percentage",
+    additionalDiscountValue: "10.11",
+    salesOrderExpectedTotal: "",
   },
   {
-    id: '3',
-    name: 'test 2',
-    status: 'Production',
-    terminateDate: '',
-    type: 'Recurring',
-    unit: 'Unit',
-    price: '100557',
-    basicDiscountType: 'Amount',
-    basicDiscountValue: '1107',
-    quantity: '2',
-    dailyRateStartDate: '',
-    dailyRateEndDate: '',
-    additionalDiscountType: 'Percentage',
-    additionalDiscountValue: '15.13',
-    salesOrderExpectedTotal: ''
+    id: "3",
+    name: "test 2",
+    status: "Production",
+    terminateDate: "",
+    type: "Recurring",
+    unit: "Unit",
+    price: "100557",
+    basicDiscountType: "Amount",
+    basicDiscountValue: "1107",
+    quantity: "2",
+    dailyRateStartDate: "",
+    dailyRateEndDate: "",
+    additionalDiscountType: "Percentage",
+    additionalDiscountValue: "15.13",
+    salesOrderExpectedTotal: "",
   },
   {
-    id: '4',
-    name: 'test gb recu',
-    status: 'Production',
-    terminateDate: '',
-    type: 'Recurring',
-    unit: 'GB',
-    price: '1827.77',
-    basicDiscountType: 'Amount',
-    basicDiscountValue: '123.57',
-    quantity: '1087',
-    dailyRateStartDate: '',
-    dailyRateEndDate: '',
-    additionalDiscountType: 'Percentage',
-    additionalDiscountValue: '12.12',
-    salesOrderExpectedTotal: ''
-  }
+    id: "4",
+    name: "test gb recu",
+    status: "Production",
+    terminateDate: "",
+    type: "Recurring",
+    unit: "GB",
+    price: "1827.77",
+    basicDiscountType: "Amount",
+    basicDiscountValue: "123.57",
+    quantity: "1087",
+    dailyRateStartDate: "",
+    dailyRateEndDate: "",
+    additionalDiscountType: "Percentage",
+    additionalDiscountValue: "12.12",
+    salesOrderExpectedTotal: "",
+  },
 ];
 
 function getInitialThemeMode(): ThemeMode {
-  if (typeof window !== 'undefined') {
-    const savedTheme = window.localStorage.getItem('invoice-theme-mode');
-    if (savedTheme === 'dark' || savedTheme === 'light') {
+  if (typeof window !== "undefined") {
+    const savedTheme = window.localStorage.getItem("invoice-theme-mode");
+    if (savedTheme === "dark" || savedTheme === "light") {
       return savedTheme;
     }
   }
-  return 'light';
+  return "light";
 }
 
 function getStatusBadgeClasses(status: ProductStatus): string {
-  if (status === 'Production') {
-    return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800';
+  if (status === "Production") {
+    return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800";
   }
-  if (status === 'Suspend') {
-    return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800';
+  if (status === "Suspend") {
+    return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800";
   }
-  if (status === 'Terminate') {
-    return 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800';
+  if (status === "Terminate") {
+    return "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800";
   }
-  return 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
+  return "bg-gray-100 text-gray-500 border-gray-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700";
 }
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(getInitialThemeMode);
-  const [currentPage, setCurrentPage] = useState<'generator' | 'trace'>('generator');
+  const [currentPage, setCurrentPage] = useState<"generator" | "trace">(
+    "generator",
+  );
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [state, setState] = useState<InvoiceCalculatorState>({
-    startDate: '2026-01-01',
-    endDate: '2026-12-31',
-    billingFrequency: 'Quarterly',
-    cycleDay: '20',
-    taxRatePercent: '11',
-    deductedTaxRatePercent: '0',
-    targetCurrency: '',
-    exchangeRate: '1',
-    terminateAllDate: '2026-12-31',
-    items: INITIAL_PRODUCT_ITEMS
+    startDate: "2026-01-01",
+    endDate: "2026-12-31",
+    billingFrequency: "Quarterly",
+    cycleDay: "20",
+    taxRatePercent: "11",
+    deductedTaxRatePercent: "0",
+    targetCurrency: "",
+    exchangeRate: "1",
+    terminateAllDate: "2026-12-31",
+    items: INITIAL_PRODUCT_ITEMS,
   });
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    window.localStorage.setItem('invoice-theme-mode', theme);
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    window.localStorage.setItem("invoice-theme-mode", theme);
   }, [theme]);
 
   function toggleThemeMode() {
-    setTheme(previousTheme => (previousTheme === 'light' ? 'dark' : 'light'));
+    setTheme((previousTheme) => (previousTheme === "light" ? "dark" : "light"));
   }
 
   function toggleExpandableRow(rowId: string) {
-    setExpandedRows(previous => ({ ...previous, [rowId]: !previous[rowId] }));
+    setExpandedRows((previous) => ({ ...previous, [rowId]: !previous[rowId] }));
   }
 
-  function updateGlobalParameter(field: keyof InvoiceCalculatorState, value: string) {
-    setState(previous => ({ ...previous, [field]: value }));
+  function updateGlobalParameter(
+    field: keyof InvoiceCalculatorState,
+    value: string,
+  ) {
+    setState((previous) => ({ ...previous, [field]: value }));
   }
 
-  function updateProductItemField(index: number, field: keyof ProductItem, value: string) {
-    setState(previous => {
+  function updateProductItemField(
+    index: number,
+    field: keyof ProductItem,
+    value: string,
+  ) {
+    setState((previous) => {
       const updatedItems = [...previous.items];
       const currentItem = updatedItems[index];
 
-      if (field === 'status') {
+      if (field === "status") {
         const nextStatus = value as ProductStatus;
         const shouldInitializeTerminateDate =
-          nextStatus === 'Terminate' && !currentItem.terminateDate;
+          nextStatus === "Terminate" && !currentItem.terminateDate;
         updatedItems[index] = {
           ...currentItem,
           status: nextStatus,
           terminateDate: shouldInitializeTerminateDate
             ? previous.terminateAllDate || previous.endDate
-            : currentItem.terminateDate
+            : currentItem.terminateDate,
         };
       } else {
         updatedItems[index] = { ...currentItem, [field]: value };
@@ -199,33 +218,40 @@ export default function App() {
   }
 
   function handleTerminateAllProducts() {
-    setState(previous => {
+    setState((previous) => {
       const targetTerminateDate = previous.terminateAllDate || previous.endDate;
       return {
         ...previous,
         terminateAllDate: targetTerminateDate,
-        items: applyTerminateAllToProductList(previous.items, targetTerminateDate)
+        items: applyTerminateAllToProductList(
+          previous.items,
+          targetTerminateDate,
+        ),
       };
     });
   }
 
   function handleAddProductItem() {
-    setState(previous => ({
+    setState((previous) => ({
       ...previous,
-      items: [...previous.items, createNewEmptyProductItem()]
+      items: [...previous.items, createNewEmptyProductItem()],
     }));
   }
 
   function handleRemoveProductItem(indexToRemove: number) {
-    setState(previous => ({
+    setState((previous) => ({
       ...previous,
-      items: previous.items.filter((_, itemIndex) => itemIndex !== indexToRemove)
+      items: previous.items.filter(
+        (_, itemIndex) => itemIndex !== indexToRemove,
+      ),
     }));
   }
 
   const calculation = useMemo(() => calculateInvoiceSchedule(state), [state]);
 
-  const targetCurrencySuffix = state.targetCurrency ? ` (${state.targetCurrency})` : '';
+  const targetCurrencySuffix = state.targetCurrency
+    ? ` (${state.targetCurrency})`
+    : "";
   const exchangeRateMultiplier = Number(state.exchangeRate) || 1;
 
   const invoiceSummaryRows = useMemo(
@@ -233,34 +259,34 @@ export default function App() {
       buildInvoiceSummaryTableRows(
         calculation,
         targetCurrencySuffix,
-        exchangeRateMultiplier
+        exchangeRateMultiplier,
       ),
-    [calculation, targetCurrencySuffix, exchangeRateMultiplier]
+    [calculation, targetCurrencySuffix, exchangeRateMultiplier],
   );
 
   const warnings = useMemo(
     () => collectInvoiceReconciliationWarnings(calculation, invoiceSummaryRows),
-    [calculation, invoiceSummaryRows]
+    [calculation, invoiceSummaryRows],
   );
 
   const eligibleForTerminateAllCount = useMemo(
     () => state.items.filter(canApplyTerminateAllToProduct).length,
-    [state.items]
+    [state.items],
   );
 
   const baseFieldClass =
-    'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-300 dark:focus:ring-slate-600 focus:border-gray-300 dark:focus:border-slate-600 outline-none transition text-gray-900 dark:text-slate-100 shadow-[0_1px_2px_rgba(0,0,0,0.02)] placeholder-gray-300 dark:placeholder-slate-500 hover:border-gray-300 dark:hover:border-slate-600';
+    "bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-300 dark:focus:ring-slate-600 focus:border-gray-300 dark:focus:border-slate-600 outline-none transition text-gray-900 dark:text-slate-100 shadow-[0_1px_2px_rgba(0,0,0,0.02)] placeholder-gray-300 dark:placeholder-slate-500 hover:border-gray-300 dark:hover:border-slate-600";
   const inputClass = `${baseFieldClass} w-full`;
   const selectClass = `${baseFieldClass} w-full cursor-pointer`;
 
-  if (currentPage === 'trace') {
+  if (currentPage === "trace") {
     return (
       <CalculationTrace
         state={state}
         calculation={calculation}
         theme={theme}
         onToggleTheme={toggleThemeMode}
-        onBack={() => setCurrentPage('generator')}
+        onBack={() => setCurrentPage("generator")}
       />
     );
   }
@@ -275,7 +301,10 @@ export default function App() {
             </h1>
             <p className="text-gray-500 dark:text-slate-400 text-sm flex items-center justify-center md:justify-start gap-1.5 font-normal">
               <FiInfo className="shrink-0" />
-              <span>Generate schedules from Sales Orders for One-time, Recurring, and DR products.</span>
+              <span>
+                Generate schedules from Sales Orders for One-time, Recurring,
+                and DR products.
+              </span>
             </p>
           </div>
           <div className="flex items-center gap-3 self-center md:self-auto">
@@ -285,7 +314,7 @@ export default function App() {
               aria-label="Toggle Light or Dark Mode"
               className="inline-flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl font-medium text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 shadow-xs transition-all cursor-pointer"
             >
-              {theme === 'dark' ? (
+              {theme === "dark" ? (
                 <>
                   <FiSun size={16} className="text-amber-400" />
                   <span>Light Mode</span>
@@ -299,14 +328,14 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setCurrentPage('trace')}
+              onClick={() => setCurrentPage("trace")}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 border border-indigo-200 dark:border-indigo-800 shadow-xs transition-all cursor-pointer"
             >
-              <FiActivity size={16} className="text-indigo-600 dark:text-indigo-400" />
+              <FiActivity
+                size={16}
+                className="text-indigo-600 dark:text-indigo-400"
+              />
               <span>Visual Trace Perhitungan</span>
-              <span className="px-1.5 py-0.5 rounded-md bg-indigo-200 dark:bg-indigo-800 text-indigo-900 dark:text-indigo-100 text-[10px] font-bold">
-                Baru
-              </span>
             </button>
           </div>
         </header>
@@ -324,38 +353,50 @@ export default function App() {
               <DateInput
                 className={inputClass}
                 value={state.startDate}
-                onChange={event => updateGlobalParameter('startDate', event.target.value)}
+                onChange={(event) =>
+                  updateGlobalParameter("startDate", event.target.value)
+                }
               />
             </FormInput>
             <FormInput label="End Subscription">
               <DateInput
                 className={inputClass}
                 value={state.endDate}
-                onChange={event => updateGlobalParameter('endDate', event.target.value)}
+                onChange={(event) =>
+                  updateGlobalParameter("endDate", event.target.value)
+                }
               />
             </FormInput>
             <FormInput label="Billing Period">
               <select
                 className={selectClass}
                 value={state.billingFrequency}
-                onChange={event =>
-                  updateGlobalParameter('billingFrequency', event.target.value as BillingFrequency)
+                onChange={(event) =>
+                  updateGlobalParameter(
+                    "billingFrequency",
+                    event.target.value as BillingFrequency,
+                  )
                 }
               >
-                {BILLING_FREQUENCIES.map(frequency => (
+                {BILLING_FREQUENCIES.map((frequency) => (
                   <option key={frequency} value={frequency}>
                     {frequency}
                   </option>
                 ))}
               </select>
             </FormInput>
-            <FormInput label="Invoice Cycle Day" note="Blank = follows start date">
+            <FormInput
+              label="Invoice Cycle Day"
+              note="Blank = follows start date"
+            >
               <input
                 type="text"
                 inputMode="decimal"
                 className={inputClass}
                 value={state.cycleDay}
-                onChange={event => updateGlobalParameter('cycleDay', event.target.value)}
+                onChange={(event) =>
+                  updateGlobalParameter("cycleDay", event.target.value)
+                }
                 placeholder="e.g. 20"
               />
             </FormInput>
@@ -365,7 +406,9 @@ export default function App() {
                 inputMode="decimal"
                 className={inputClass}
                 value={state.taxRatePercent}
-                onChange={event => updateGlobalParameter('taxRatePercent', event.target.value)}
+                onChange={(event) =>
+                  updateGlobalParameter("taxRatePercent", event.target.value)
+                }
               />
             </FormInput>
             <FormInput label="Deducted Taxes (%)">
@@ -374,7 +417,12 @@ export default function App() {
                 inputMode="decimal"
                 className={inputClass}
                 value={state.deductedTaxRatePercent}
-                onChange={event => updateGlobalParameter('deductedTaxRatePercent', event.target.value)}
+                onChange={(event) =>
+                  updateGlobalParameter(
+                    "deductedTaxRatePercent",
+                    event.target.value,
+                  )
+                }
               />
             </FormInput>
             <FormInput label="Target Currency">
@@ -382,7 +430,9 @@ export default function App() {
                 type="text"
                 className={inputClass}
                 value={state.targetCurrency}
-                onChange={event => updateGlobalParameter('targetCurrency', event.target.value)}
+                onChange={(event) =>
+                  updateGlobalParameter("targetCurrency", event.target.value)
+                }
                 placeholder="e.g. IDR"
               />
             </FormInput>
@@ -392,7 +442,9 @@ export default function App() {
                 inputMode="decimal"
                 className={inputClass}
                 value={state.exchangeRate}
-                onChange={event => updateGlobalParameter('exchangeRate', event.target.value)}
+                onChange={(event) =>
+                  updateGlobalParameter("exchangeRate", event.target.value)
+                }
               />
             </FormInput>
           </div>
@@ -417,15 +469,23 @@ export default function App() {
                   Terminate All Products
                 </span>
                 <span className="text-[11px] text-rose-600/80 dark:text-rose-400/80">
-                  Hanya mengubah status Production & Suspend (Terminate lama & Delete tidak ter-override)
+                  Hanya mengubah status Production & Suspend (Terminate lama &
+                  Delete tidak ter-override)
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <DateInput
-                  className={inputClass + ' !py-1.5 text-xs bg-white dark:bg-slate-900'}
+                  className={
+                    inputClass + " !py-1.5 text-xs bg-white dark:bg-slate-900"
+                  }
                   value={state.terminateAllDate}
-                  onChange={event => updateGlobalParameter('terminateAllDate', event.target.value)}
-                  style={{ width: '145px' }}
+                  onChange={(event) =>
+                    updateGlobalParameter(
+                      "terminateAllDate",
+                      event.target.value,
+                    )
+                  }
+                  style={{ width: "145px" }}
                   placeholder="Terminate Date"
                 />
                 <button
@@ -447,7 +507,8 @@ export default function App() {
                 Total Basic Discount
               </span>
               <div className="text-xl font-semibold font-mono text-gray-900 dark:text-slate-100 mt-1">
-                {formatDisplayNumber(calculation.totalBasicDiscount)} {state.targetCurrency}
+                {formatDisplayNumber(calculation.totalBasicDiscount)}{" "}
+                {state.targetCurrency}
               </div>
             </div>
             <div className="bg-gray-50 dark:bg-slate-800/60 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
@@ -455,7 +516,9 @@ export default function App() {
                 Total Additional Discount
               </span>
               <div className="text-xl font-semibold font-mono text-gray-900 dark:text-slate-100 mt-1">
-                {formatDisplayNumber(calculation.salesOrderSummary.totalAdditionalDiscount)}{' '}
+                {formatDisplayNumber(
+                  calculation.salesOrderSummary.totalAdditionalDiscount,
+                )}{" "}
                 {state.targetCurrency}
               </div>
             </div>
@@ -464,7 +527,10 @@ export default function App() {
                 Total Recurring Net (SO)
               </span>
               <div className="text-xl font-semibold font-mono text-gray-900 dark:text-slate-100 mt-1">
-                {formatDisplayNumber(calculation.salesOrderSummary.recurringTotal)} {state.targetCurrency}
+                {formatDisplayNumber(
+                  calculation.salesOrderSummary.recurringTotal,
+                )}{" "}
+                {state.targetCurrency}
               </div>
             </div>
           </div>
@@ -473,42 +539,61 @@ export default function App() {
             <table className="w-full min-w-[1800px] text-sm text-left whitespace-nowrap">
               <thead className="text-xs text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-800/80 border-b border-gray-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-4 py-3.5 font-medium w-[195px]">Product Name</th>
+                  <th className="px-4 py-3.5 font-medium w-[195px]">
+                    Product Name
+                  </th>
                   <th className="px-4 py-3.5 font-medium w-[175px]">Status</th>
                   <th className="px-4 py-3.5 font-medium w-[145px]">Type</th>
                   <th className="px-4 py-3.5 font-medium w-[105px]">Unit</th>
-                  <th className="px-4 py-3.5 font-medium w-[160px]">Price / unit</th>
-                  <th className="px-4 py-3.5 font-medium w-[210px]">Basic Discount</th>
+                  <th className="px-4 py-3.5 font-medium w-[160px]">
+                    Price / unit
+                  </th>
+                  <th className="px-4 py-3.5 font-medium w-[210px]">
+                    Basic Discount
+                  </th>
                   <th className="px-4 py-3.5 font-medium w-[140px]">Qty</th>
-                  <th className="px-4 py-3.5 font-medium w-[170px]">DR Date Range</th>
-                  <th className="px-4 py-3.5 font-medium w-[210px]">Addt'l Discount</th>
-                  <th className="px-4 py-3.5 font-medium text-right w-[150px]">Calc. Total (SO)</th>
+                  <th className="px-4 py-3.5 font-medium w-[170px]">
+                    DR Date Range
+                  </th>
+                  <th className="px-4 py-3.5 font-medium w-[210px]">
+                    Addt'l Discount
+                  </th>
+                  <th className="px-4 py-3.5 font-medium text-right w-[150px]">
+                    Calc. Total (SO)
+                  </th>
                   <th className="px-4 py-3.5 w-[60px]"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                 {state.items.map((item, itemIndex) => {
-                  const calculatedItem = calculation.allCalculatedItems[itemIndex];
-                  const isDeleted = item.status === 'Delete';
-                  const isTerminated = item.status === 'Terminate';
+                  const calculatedItem =
+                    calculation.allCalculatedItems[itemIndex];
+                  const isDeleted = item.status === "Delete";
+                  const isTerminated = item.status === "Terminate";
                   const invoicedItemTotal = calculatedItem?.periodRows.reduce(
                     (sum, row) => sum + (Number(row.grandTotal) || 0),
-                    0
+                    0,
                   );
 
                   return (
                     <tr
                       key={item.id}
                       className={`bg-white dark:bg-slate-900 hover:bg-gray-50/50 dark:hover:bg-slate-800/40 transition-colors group ${
-                        isDeleted ? 'opacity-55 bg-gray-50/60 dark:bg-slate-900/50' : ''
+                        isDeleted
+                          ? "opacity-55 bg-gray-50/60 dark:bg-slate-900/50"
+                          : ""
                       }`}
                     >
                       <td className="px-3 py-3 align-top">
                         <input
-                          className={`${baseFieldClass} w-[175px] ${isDeleted ? 'line-through text-gray-400' : ''}`}
+                          className={`${baseFieldClass} w-[175px] ${isDeleted ? "line-through text-gray-400" : ""}`}
                           value={item.name}
-                          onChange={event =>
-                            updateProductItemField(itemIndex, 'name', event.target.value)
+                          onChange={(event) =>
+                            updateProductItemField(
+                              itemIndex,
+                              "name",
+                              event.target.value,
+                            )
                           }
                           placeholder="Name"
                         />
@@ -517,16 +602,16 @@ export default function App() {
                         <div className="flex flex-col gap-1.5 w-[155px]">
                           <select
                             className={`${baseFieldClass} w-full cursor-pointer font-medium ${getStatusBadgeClasses(item.status)}`}
-                            value={item.status || 'Production'}
-                            onChange={event =>
+                            value={item.status || "Production"}
+                            onChange={(event) =>
                               updateProductItemField(
                                 itemIndex,
-                                'status',
-                                event.target.value as ProductStatus
+                                "status",
+                                event.target.value as ProductStatus,
                               )
                             }
                           >
-                            {PRODUCT_STATUSES.map(statusOption => (
+                            {PRODUCT_STATUSES.map((statusOption) => (
                               <option
                                 key={statusOption}
                                 value={statusOption}
@@ -544,11 +629,11 @@ export default function App() {
                               <DateInput
                                 className={`${baseFieldClass} w-full !py-1 text-[12px] border-rose-200 dark:border-rose-800`}
                                 value={item.terminateDate}
-                                onChange={event =>
+                                onChange={(event) =>
                                   updateProductItemField(
                                     itemIndex,
-                                    'terminateDate',
-                                    event.target.value
+                                    "terminateDate",
+                                    event.target.value,
                                   )
                                 }
                               />
@@ -560,15 +645,15 @@ export default function App() {
                         <select
                           className={`${baseFieldClass} w-[130px] cursor-pointer`}
                           value={item.type}
-                          onChange={event =>
+                          onChange={(event) =>
                             updateProductItemField(
                               itemIndex,
-                              'type',
-                              event.target.value as ProductType
+                              "type",
+                              event.target.value as ProductType,
                             )
                           }
                         >
-                          {PRODUCT_TYPES.map(productType => (
+                          {PRODUCT_TYPES.map((productType) => (
                             <option key={productType} value={productType}>
                               {productType}
                             </option>
@@ -578,12 +663,16 @@ export default function App() {
                       <td className="px-3 py-3 align-top">
                         <select
                           className={`${baseFieldClass} w-[90px] cursor-pointer`}
-                          value={item.unit || 'Unit'}
-                          onChange={event =>
-                            updateProductItemField(itemIndex, 'unit', event.target.value as UnitType)
+                          value={item.unit || "Unit"}
+                          onChange={(event) =>
+                            updateProductItemField(
+                              itemIndex,
+                              "unit",
+                              event.target.value as UnitType,
+                            )
                           }
                         >
-                          {UNIT_TYPES.map(unitType => (
+                          {UNIT_TYPES.map((unitType) => (
                             <option key={unitType} value={unitType}>
                               {unitType}
                             </option>
@@ -596,8 +685,12 @@ export default function App() {
                           inputMode="decimal"
                           className={`${baseFieldClass} w-[140px]`}
                           value={item.price}
-                          onChange={event =>
-                            updateProductItemField(itemIndex, 'price', event.target.value)
+                          onChange={(event) =>
+                            updateProductItemField(
+                              itemIndex,
+                              "price",
+                              event.target.value,
+                            )
                           }
                         />
                       </td>
@@ -606,17 +699,17 @@ export default function App() {
                           <select
                             className={`${baseFieldClass} !px-2 w-[64px] shrink-0 cursor-pointer`}
                             value={item.basicDiscountType}
-                            onChange={event =>
+                            onChange={(event) =>
                               updateProductItemField(
                                 itemIndex,
-                                'basicDiscountType',
-                                event.target.value as DiscountType
+                                "basicDiscountType",
+                                event.target.value as DiscountType,
                               )
                             }
                           >
-                            {DISCOUNT_TYPES.map(discountType => (
+                            {DISCOUNT_TYPES.map((discountType) => (
                               <option key={discountType} value={discountType}>
-                                {discountType === 'Amount' ? '$' : '%'}
+                                {discountType === "Amount" ? "$" : "%"}
                               </option>
                             ))}
                           </select>
@@ -625,19 +718,26 @@ export default function App() {
                             inputMode="decimal"
                             className={`${baseFieldClass} w-[118px] shrink-0`}
                             value={item.basicDiscountValue}
-                            onChange={event =>
+                            onChange={(event) =>
                               updateProductItemField(
                                 itemIndex,
-                                'basicDiscountValue',
-                                event.target.value
+                                "basicDiscountValue",
+                                event.target.value,
                               )
                             }
-                            placeholder={item.basicDiscountType === 'Percentage' ? '%' : 'Amt'}
+                            placeholder={
+                              item.basicDiscountType === "Percentage"
+                                ? "%"
+                                : "Amt"
+                            }
                           />
                         </div>
                         {calculatedItem?.isUsed && (
                           <div className="text-[11px] text-gray-400 dark:text-slate-500 mt-1 font-mono">
-                            Total: {formatDisplayNumber(calculatedItem.totalBasicDiscount)}
+                            Total:{" "}
+                            {formatDisplayNumber(
+                              calculatedItem.totalBasicDiscount,
+                            )}
                           </div>
                         )}
                       </td>
@@ -647,8 +747,12 @@ export default function App() {
                           inputMode="decimal"
                           className={`${baseFieldClass} w-[120px]`}
                           value={item.quantity}
-                          onChange={event =>
-                            updateProductItemField(itemIndex, 'quantity', event.target.value)
+                          onChange={(event) =>
+                            updateProductItemField(
+                              itemIndex,
+                              "quantity",
+                              event.target.value,
+                            )
                           }
                         />
                       </td>
@@ -657,22 +761,22 @@ export default function App() {
                           <DateInput
                             className={`${baseFieldClass} w-full !py-1 text-[13px]`}
                             value={item.dailyRateStartDate}
-                            onChange={event =>
+                            onChange={(event) =>
                               updateProductItemField(
                                 itemIndex,
-                                'dailyRateStartDate',
-                                event.target.value
+                                "dailyRateStartDate",
+                                event.target.value,
                               )
                             }
                           />
                           <DateInput
                             className={`${baseFieldClass} w-full !py-1 text-[13px]`}
                             value={item.dailyRateEndDate}
-                            onChange={event =>
+                            onChange={(event) =>
                               updateProductItemField(
                                 itemIndex,
-                                'dailyRateEndDate',
-                                event.target.value
+                                "dailyRateEndDate",
+                                event.target.value,
                               )
                             }
                           />
@@ -683,17 +787,17 @@ export default function App() {
                           <select
                             className={`${baseFieldClass} !px-2 w-[64px] shrink-0 cursor-pointer`}
                             value={item.additionalDiscountType}
-                            onChange={event =>
+                            onChange={(event) =>
                               updateProductItemField(
                                 itemIndex,
-                                'additionalDiscountType',
-                                event.target.value as DiscountType
+                                "additionalDiscountType",
+                                event.target.value as DiscountType,
                               )
                             }
                           >
-                            {DISCOUNT_TYPES.map(discountType => (
+                            {DISCOUNT_TYPES.map((discountType) => (
                               <option key={discountType} value={discountType}>
-                                {discountType === 'Amount' ? '$' : '%'}
+                                {discountType === "Amount" ? "$" : "%"}
                               </option>
                             ))}
                           </select>
@@ -702,19 +806,26 @@ export default function App() {
                             inputMode="decimal"
                             className={`${baseFieldClass} w-[118px] shrink-0`}
                             value={item.additionalDiscountValue}
-                            onChange={event =>
+                            onChange={(event) =>
                               updateProductItemField(
                                 itemIndex,
-                                'additionalDiscountValue',
-                                event.target.value
+                                "additionalDiscountValue",
+                                event.target.value,
                               )
                             }
-                            placeholder={item.additionalDiscountType === 'Percentage' ? '%' : 'Amt'}
+                            placeholder={
+                              item.additionalDiscountType === "Percentage"
+                                ? "%"
+                                : "Amt"
+                            }
                           />
                         </div>
                         {calculatedItem?.isUsed && (
                           <div className="text-[11px] text-gray-400 dark:text-slate-500 mt-1 font-mono">
-                            Total: {formatDisplayNumber(calculatedItem.additionalDiscountAmount)}
+                            Total:{" "}
+                            {formatDisplayNumber(
+                              calculatedItem.additionalDiscountAmount,
+                            )}
                           </div>
                         )}
                       </td>
@@ -725,15 +836,18 @@ export default function App() {
                           </span>
                         ) : calculatedItem?.isUsed ? (
                           <div>
-                            <div>{formatDisplayNumber(calculatedItem.grandTotal)}</div>
-                            {isTerminated && invoicedItemTotal !== undefined && (
-                              <div className="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5">
-                                Inv: {formatDisplayNumber(invoicedItemTotal)}
-                              </div>
-                            )}
+                            <div>
+                              {formatDisplayNumber(calculatedItem.grandTotal)}
+                            </div>
+                            {isTerminated &&
+                              invoicedItemTotal !== undefined && (
+                                <div className="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5">
+                                  Inv: {formatDisplayNumber(invoicedItemTotal)}
+                                </div>
+                              )}
                           </div>
                         ) : (
-                          '-'
+                          "-"
                         )}
                       </td>
                       <td className="px-3 py-3 align-top text-center">
@@ -762,7 +876,11 @@ export default function App() {
           <p className="mt-6 text-xs text-gray-400 dark:text-slate-500 flex gap-2 font-normal">
             <FiInfo className="shrink-0 mt-0.5" />
             <span>
-              Status Production & Suspend ditagihkan penuh. Status Terminate ditagihkan prorata sampai Terminate Date (SO tetap penuh). Status Delete diabaikan dari seluruh perhitungan. Terminate All hanya mengubah item Production & Suspend tanpa meng-override Terminate lama maupun Delete.
+              Status Production & Suspend ditagihkan penuh. Status Terminate
+              ditagihkan prorata sampai Terminate Date (SO tetap penuh). Status
+              Delete diabaikan dari seluruh perhitungan. Terminate All hanya
+              mengubah item Production & Suspend tanpa meng-override Terminate
+              lama maupun Delete.
             </span>
           </p>
         </section>
@@ -776,10 +894,13 @@ export default function App() {
               Invoices Breakdown
             </h2>
             <button
-              onClick={() => setCurrentPage('trace')}
+              onClick={() => setCurrentPage("trace")}
               className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
             >
-              <FiActivity size={14} className="text-indigo-600 dark:text-indigo-400" />
+              <FiActivity
+                size={14}
+                className="text-indigo-600 dark:text-indigo-400"
+              />
               <span>Lihat Visual Trace Rumus</span>
             </button>
           </div>
@@ -787,7 +908,10 @@ export default function App() {
           {warnings.length > 0 ? (
             <div className="mb-8 bg-gray-50 dark:bg-slate-800/70 border border-gray-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
               <div className="flex items-start gap-3 text-gray-800 dark:text-slate-200">
-                <FiAlertCircle className="mt-0.5 shrink-0 text-amber-500" size={18} />
+                <FiAlertCircle
+                  className="mt-0.5 shrink-0 text-amber-500"
+                  size={18}
+                />
                 <div className="flex flex-col gap-1.5">
                   {warnings.map((warningText, index) => (
                     <span key={index} className="text-sm">
@@ -799,7 +923,8 @@ export default function App() {
             </div>
           ) : (
             <div className="mb-8 bg-gray-50 dark:bg-slate-800/70 border border-gray-200 dark:border-slate-800 rounded-xl p-4 text-gray-600 dark:text-slate-300 flex items-center gap-2 text-sm font-medium">
-              <FiCheckCircle size={18} className="text-emerald-500" /> All invoices match the Sales Order amounts perfectly.
+              <FiCheckCircle size={18} className="text-emerald-500" /> All
+              invoices match the Sales Order amounts perfectly.
             </div>
           )}
 
@@ -811,10 +936,16 @@ export default function App() {
                     <th className="px-5 py-4 sticky left-0 bg-gray-50 dark:bg-slate-800 z-10 w-48 font-medium">
                       Description
                     </th>
-                    <th className="px-5 py-4 text-right font-medium">SO Value</th>
-                    <th className="px-5 py-4 text-right font-medium">Invoice Total</th>
-                    <th className="px-5 py-4 text-right font-medium">Difference</th>
-                    {calculation.invoiceColumns.map(column => (
+                    <th className="px-5 py-4 text-right font-medium">
+                      SO Value
+                    </th>
+                    <th className="px-5 py-4 text-right font-medium">
+                      Invoice Total
+                    </th>
+                    <th className="px-5 py-4 text-right font-medium">
+                      Difference
+                    </th>
+                    {calculation.invoiceColumns.map((column) => (
                       <th
                         key={column.label}
                         className="px-5 py-4 text-right font-medium text-gray-900 dark:text-slate-100"
@@ -826,7 +957,9 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                   {invoiceSummaryRows.map((row, rowIndex) => {
-                    const isProRataFactorRow = String(row.values[0]).includes('Pro-rata factor');
+                    const isProRataFactorRow = String(row.values[0]).includes(
+                      "Pro-rata factor",
+                    );
                     const rowId = row.id;
                     const isExpandable = Boolean(rowId && row.rawValues);
                     const isExpanded = Boolean(rowId && expandedRows[rowId]);
@@ -835,7 +968,7 @@ export default function App() {
                       <Fragment key={rowIndex}>
                         <tr
                           className={`hover:bg-gray-50/50 dark:hover:bg-slate-800/40 transition-colors ${
-                            row.customClass || ''
+                            row.customClass || ""
                           }`}
                         >
                           {row.values.map((cellValue, columnIndex) => (
@@ -843,8 +976,8 @@ export default function App() {
                               key={columnIndex}
                               className={`px-5 py-3.5 ${
                                 columnIndex === 0
-                                  ? 'sticky left-0 bg-white dark:bg-slate-900 z-10 font-medium text-gray-700 dark:text-slate-200'
-                                  : 'text-right font-mono text-gray-600 dark:text-slate-300'
+                                  ? "sticky left-0 bg-white dark:bg-slate-900 z-10 font-medium text-gray-700 dark:text-slate-200"
+                                  : "text-right font-mono text-gray-600 dark:text-slate-300"
                               }`}
                             >
                               {columnIndex === 0 && isExpandable && rowId ? (
@@ -862,7 +995,8 @@ export default function App() {
                                   )}
                                   <span>{formatDisplayNumber(cellValue)}</span>
                                 </button>
-                              ) : isProRataFactorRow && typeof cellValue === 'number' ? (
+                              ) : isProRataFactorRow &&
+                                typeof cellValue === "number" ? (
                                 formatNumberWithNineDecimals(cellValue)
                               ) : (
                                 formatDisplayNumber(cellValue)
@@ -877,8 +1011,8 @@ export default function App() {
                                 key={columnIndex}
                                 className={`px-5 py-2.5 ${
                                   columnIndex === 0
-                                    ? 'sticky left-0 bg-gray-50 dark:bg-slate-800 z-10 pl-12 font-medium not-italic'
-                                    : 'text-right font-mono'
+                                    ? "sticky left-0 bg-gray-50 dark:bg-slate-800 z-10 pl-12 font-medium not-italic"
+                                    : "text-right font-mono"
                                 }`}
                               >
                                 {columnIndex === 0
@@ -896,108 +1030,119 @@ export default function App() {
             </div>
           ) : (
             <div className="text-center py-12 text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-gray-300 dark:border-slate-700 font-medium text-sm">
-              Enter valid dates and at least one product with a price to see the invoice breakdown.
+              Enter valid dates and at least one product with a price to see the
+              invoice breakdown.
             </div>
           )}
 
-          {calculation.invoiceColumns.length > 0 && calculation.activeCalculatedItems.length > 0 && (
-            <div className="mt-10 space-y-4">
-              <h3 className="text-base font-medium text-gray-800 dark:text-slate-100 mb-5">
-                Product Level Breakdown
-              </h3>
+          {calculation.invoiceColumns.length > 0 &&
+            calculation.activeCalculatedItems.length > 0 && (
+              <div className="mt-10 space-y-4">
+                <h3 className="text-base font-medium text-gray-800 dark:text-slate-100 mb-5">
+                  Product Level Breakdown
+                </h3>
 
-              {calculation.activeCalculatedItems.map(
-                (item: CalculatedProductItem, productIndex: number) => {
-                  const productTableRows = buildProductBreakdownTableRows(
-                    item,
-                    calculation,
-                    targetCurrencySuffix,
-                    exchangeRateMultiplier
-                  );
+                {calculation.activeCalculatedItems.map(
+                  (item: CalculatedProductItem, productIndex: number) => {
+                    const productTableRows = buildProductBreakdownTableRows(
+                      item,
+                      calculation,
+                      targetCurrencySuffix,
+                      exchangeRateMultiplier,
+                    );
 
-                  return (
-                    <details
-                      key={productIndex}
-                      className="group bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden [&_summary::-webkit-details-marker]:hidden shadow-sm"
-                    >
-                      <summary className="px-5 py-4 cursor-pointer font-medium text-gray-800 dark:text-slate-100 bg-gray-50 dark:bg-slate-800/70 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-between">
-                        <span className="flex items-center gap-3 flex-wrap">
-                          <span>{item.name || '(No name)'}</span>
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-md border font-medium ${getStatusBadgeClasses(
-                              item.status
-                            )}`}
-                          >
-                            {item.status}
-                            {item.status === 'Terminate' && item.terminateDate
-                              ? ` (${item.terminateDate})`
-                              : ''}
+                    return (
+                      <details
+                        key={productIndex}
+                        className="group bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden [&_summary::-webkit-details-marker]:hidden shadow-sm"
+                      >
+                        <summary className="px-5 py-4 cursor-pointer font-medium text-gray-800 dark:text-slate-100 bg-gray-50 dark:bg-slate-800/70 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-between">
+                          <span className="flex items-center gap-3 flex-wrap">
+                            <span>{item.name || "(No name)"}</span>
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-md border font-medium ${getStatusBadgeClasses(
+                                item.status,
+                              )}`}
+                            >
+                              {item.status}
+                              {item.status === "Terminate" && item.terminateDate
+                                ? ` (${item.terminateDate})`
+                                : ""}
+                            </span>
+                            <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-slate-600"></span>
+                            <span className="text-sm font-normal text-gray-500 dark:text-slate-400">
+                              {item.type}
+                            </span>
+                            <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-slate-600"></span>
+                            <span className="text-sm font-normal text-gray-500 dark:text-slate-400">
+                              Unit: {item.unit}
+                            </span>
+                            <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-slate-600"></span>
+                            <span className="text-sm font-normal text-gray-500 dark:text-slate-400">
+                              Qty: {item.quantity}
+                            </span>
                           </span>
-                          <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-slate-600"></span>
-                          <span className="text-sm font-normal text-gray-500 dark:text-slate-400">
-                            {item.type}
+                          <span className="text-gray-400 dark:text-slate-500 transition-transform group-open:rotate-180">
+                            <FiPlus />
                           </span>
-                          <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-slate-600"></span>
-                          <span className="text-sm font-normal text-gray-500 dark:text-slate-400">
-                            Unit: {item.unit}
-                          </span>
-                          <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-slate-600"></span>
-                          <span className="text-sm font-normal text-gray-500 dark:text-slate-400">
-                            Qty: {item.quantity}
-                          </span>
-                        </span>
-                        <span className="text-gray-400 dark:text-slate-500 transition-transform group-open:rotate-180">
-                          <FiPlus />
-                        </span>
-                      </summary>
-                      <div className="p-0 overflow-x-auto border-t border-gray-200 dark:border-slate-800">
-                        <table className="w-full text-sm text-left whitespace-nowrap">
-                          <thead className="text-xs text-gray-400 dark:text-slate-400 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800">
-                            <tr>
-                              <th className="px-5 py-3 sticky left-0 bg-white dark:bg-slate-900 z-10 font-medium">
-                                Item Metric
-                              </th>
-                              <th className="px-5 py-3 text-right font-medium">SO Value</th>
-                              <th className="px-5 py-3 text-right font-medium">Inv Total</th>
-                              <th className="px-5 py-3 text-right font-medium">Difference</th>
-                              {calculation.invoiceColumns.map(column => (
-                                <th key={column.label} className="px-5 py-3 text-right font-medium">
-                                  {column.label}
+                        </summary>
+                        <div className="p-0 overflow-x-auto border-t border-gray-200 dark:border-slate-800">
+                          <table className="w-full text-sm text-left whitespace-nowrap">
+                            <thead className="text-xs text-gray-400 dark:text-slate-400 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800">
+                              <tr>
+                                <th className="px-5 py-3 sticky left-0 bg-white dark:bg-slate-900 z-10 font-medium">
+                                  Item Metric
                                 </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                            {productTableRows.map((row, rowIndex) => (
-                              <tr
-                                key={rowIndex}
-                                className={`hover:bg-gray-50/50 dark:hover:bg-slate-800/40 transition-colors ${
-                                  row.customClass || ''
-                                }`}
-                              >
-                                {row.values.map((cellValue, columnIndex) => (
-                                  <td
-                                    key={columnIndex}
-                                    className={`px-5 py-2.5 ${
-                                      columnIndex === 0
-                                        ? 'sticky left-0 bg-white dark:bg-slate-900 z-10 font-normal text-gray-600 dark:text-slate-300'
-                                        : 'text-right font-mono text-gray-500 dark:text-slate-400'
-                                    }`}
+                                <th className="px-5 py-3 text-right font-medium">
+                                  SO Value
+                                </th>
+                                <th className="px-5 py-3 text-right font-medium">
+                                  Inv Total
+                                </th>
+                                <th className="px-5 py-3 text-right font-medium">
+                                  Difference
+                                </th>
+                                {calculation.invoiceColumns.map((column) => (
+                                  <th
+                                    key={column.label}
+                                    className="px-5 py-3 text-right font-medium"
                                   >
-                                    {formatDisplayNumber(cellValue)}
-                                  </td>
+                                    {column.label}
+                                  </th>
                                 ))}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </details>
-                  );
-                }
-              )}
-            </div>
-          )}
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                              {productTableRows.map((row, rowIndex) => (
+                                <tr
+                                  key={rowIndex}
+                                  className={`hover:bg-gray-50/50 dark:hover:bg-slate-800/40 transition-colors ${
+                                    row.customClass || ""
+                                  }`}
+                                >
+                                  {row.values.map((cellValue, columnIndex) => (
+                                    <td
+                                      key={columnIndex}
+                                      className={`px-5 py-2.5 ${
+                                        columnIndex === 0
+                                          ? "sticky left-0 bg-white dark:bg-slate-900 z-10 font-normal text-gray-600 dark:text-slate-300"
+                                          : "text-right font-mono text-gray-500 dark:text-slate-400"
+                                      }`}
+                                    >
+                                      {formatDisplayNumber(cellValue)}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                    );
+                  },
+                )}
+              </div>
+            )}
         </section>
       </div>
     </div>

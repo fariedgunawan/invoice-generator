@@ -119,12 +119,22 @@ Untuk setiap periode invoice ke-$k$ dengan rentang $[S_k, E_k]$:
   - Faktor prorata item di periode $k$:
     $$f_{\text{item}, k} = \text{round}_9\left(\frac{\text{Days}_{\text{active}, k}}{30}\right)$$
   - **Harga & Diskon Satuan di Periode $k$**:
-    $$P_k = \text{roundUnit}(P \times f_{\text{item}, k})$$
-    $$\text{BD}_{\text{unit}, k} = \begin{cases} \text{roundUnit}\left(\frac{P_k \times \text{BasicDisc\%}}{100}\right) & \text{jika Percentage} \\ \text{roundUnit}(\text{BD}_{\text{unit}} \times f_{\text{item}, k}) & \text{jika Amount} \end{cases}$$
-    $$\text{Net}_{\text{unit}, k} = \text{roundUnit}(P_k - \text{BD}_{\text{unit}, k})$$
-  - **Total Periode $k$ (Periode Berjalan / Terminated Sebelum Akhir Kontrak)**:
-    $$\text{TBD}_k = \text{roundUnit}(\text{BD}_{\text{unit}, k} \times \text{Qty})$$
-    $$\text{TT}_k = \text{round}_0(\text{Net}_{\text{unit}, k} \times \text{Qty})$$
+    - **Jika Frekuensi selain `Monthly` (`Quarterly`, `Semester`, `Yearly`) DAN tidak terkena `Terminate` di tengah periode ($E_{\text{active}, k} == E_k$)**:
+      Nilai satuan pada invoice tetap sama persis dengan nilai satuan di SO (tidak dikalikan $f_{\text{item}, k}$):
+      $$P_k = P$$
+      $$\text{BD}_{\text{unit}, k} = \text{BD}_{\text{unit}}$$
+      $$\text{Net}_{\text{unit}, k} = \text{Net}_{\text{unit}}$$
+      Sedangkan nilai total di periode $k$ dikalikan dengan faktor bulan periode $f_{\text{item}, k}$:
+      $$\text{TBD}_k = \text{roundUnit}(\text{BD}_{\text{unit}, k} \times \text{Qty} \times f_{\text{item}, k})$$
+      $$\text{TT}_k = \text{round}_0(\text{Net}_{\text{unit}, k} \times \text{Qty} \times f_{\text{item}, k})$$
+    - **Jika Frekuensi = `Monthly` ATAU item terkena `Terminate` di tengah periode ($E_{\text{active}, k} < E_k$)**:
+      Nilai satuan dikalikan dengan faktor prorata $f_{\text{item}, k} = \text{Days}_{\text{active}, k} / 30$:
+      $$P_k = \text{roundUnit}(P \times f_{\text{item}, k})$$
+      $$\text{BD}_{\text{unit}, k} = \begin{cases} \text{roundUnit}\left(\frac{P_k \times \text{BasicDisc\%}}{100}\right) & \text{jika Percentage} \\ \text{roundUnit}(\text{BD}_{\text{unit}} \times f_{\text{item}, k}) & \text{jika Amount} \end{cases}$$
+      $$\text{Net}_{\text{unit}, k} = \text{roundUnit}(P_k - \text{BD}_{\text{unit}, k})$$
+      $$\text{TBD}_k = \text{roundUnit}(\text{BD}_{\text{unit}, k} \times \text{Qty})$$
+      $$\text{TT}_k = \text{round}_0(\text{Net}_{\text{unit}, k} \times \text{Qty})$$
+  - **Additional Discount & Item Grand Total di Periode $k$**:
     $$\text{AD}_k = \text{round}_0\left(\frac{\text{AD}_{\text{SO}} \times f_{\text{item}, k}}{\text{Dur}_{\text{SO}}}\right)$$
     $$\text{GT}_k = \text{round}_0(\text{TT}_k - \text{AD}_k)$$
   - **Penyerapan Selisih Pembulatan di Periode Terakhir Kontrak Penuh**:
