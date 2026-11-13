@@ -654,17 +654,17 @@ export function calculateRecurringPeriodRow(
   if (!item.duration || activeDays <= 0) return createEmptyPeriodRow();
 
   const unitPrice = shouldProrateUnitPrice
-    ? roundToTwoDecimals(item.price * periodProRataFactor)
+    ? roundByUnitType(item.price * periodProRataFactor, item.unit)
     : item.price;
 
   const basicDiscountPerUnit = shouldProrateUnitPrice
     ? item.basicDiscountType === 'Percentage'
-      ? roundToTwoDecimals((unitPrice * item.basicDiscountValue) / 100)
-      : roundToTwoDecimals(item.basicDiscountPerUnit * periodProRataFactor)
+      ? roundByUnitType((unitPrice * item.basicDiscountValue) / 100, item.unit)
+      : roundByUnitType(item.basicDiscountPerUnit * periodProRataFactor, item.unit)
     : item.basicDiscountPerUnit;
 
   const netPricePerUnit = shouldProrateUnitPrice
-    ? roundToTwoDecimals(unitPrice - basicDiscountPerUnit)
+    ? roundByUnitType(unitPrice - basicDiscountPerUnit, item.unit)
     : item.netPricePerUnit;
 
   if (shouldAbsorbFullContractRemainder) {
