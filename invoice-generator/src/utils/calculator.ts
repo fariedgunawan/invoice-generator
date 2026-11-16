@@ -38,7 +38,11 @@ export function roundToInteger(value: number): number {
 }
 
 export function roundToTwoDecimals(value: number): number {
-  return Number(`${Math.round(Number(`${value}e2`))}e-2`);
+  let roundedValue = Number(`${Math.round(Number(`${value}e9`))}e-9`);
+  for (let decimals = 8; decimals >= 2; decimals--) {
+    roundedValue = Number(`${Math.round(Number(`${roundedValue}e${decimals}`))}e-${decimals}`);
+  }
+  return roundedValue;
 }
 
 export function roundToNineDecimals(value: number): number {
@@ -193,7 +197,7 @@ export function validateDatesAndCalculateDuration(state: InvoiceCalculatorState)
   const endDate = parseDateString(state.endDate || '2000-01-01');
   const monthsPerInvoice = MONTHS_PER_INVOICE_MAP[state.billingFrequency] || 1;
   const prorataBasis = PRORATA_BASIS_MAP[state.billingFrequency] || 30;
-  const cycleDay = state.billingFrequency === 'Monthly' ? Number(state.cycleDay) || 0 : 0;
+  const cycleDay = Number(state.cycleDay) || 0;
 
   const isInvalidDateRange = convertDateToSerialDays(startDate) > convertDateToSerialDays(endDate);
 
@@ -201,7 +205,7 @@ export function validateDatesAndCalculateDuration(state: InvoiceCalculatorState)
     warnings.push('Start is after end');
   }
 
-  if (state.billingFrequency === 'Monthly' && !cycleDay && startDate.day > 28) {
+  if (!cycleDay && startDate.day > 28) {
     warnings.push('Start on the 29th-31st without a cycle day: enter a cycle day 1-28');
   }
 
