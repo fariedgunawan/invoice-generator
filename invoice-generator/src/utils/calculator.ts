@@ -33,16 +33,21 @@ export const PRORATA_BASIS_MAP: Record<string, number> = {
   Yearly: 30
 };
 
-export function roundToInteger(value: number): number {
-  return Math.round(value);
-}
-
-export function roundToTwoDecimals(value: number): number {
+function cascadeRound(value: number, targetDecimals: number): number {
+  if (!Number.isFinite(value) || value === 0) return 0;
   let roundedValue = Number(`${Math.round(Number(`${value}e9`))}e-9`);
-  for (let decimals = 8; decimals >= 2; decimals--) {
+  for (let decimals = 8; decimals >= targetDecimals; decimals--) {
     roundedValue = Number(`${Math.round(Number(`${roundedValue}e${decimals}`))}e-${decimals}`);
   }
   return roundedValue;
+}
+
+export function roundToInteger(value: number): number {
+  return cascadeRound(value, 0);
+}
+
+export function roundToTwoDecimals(value: number): number {
+  return cascadeRound(value, 2);
 }
 
 export function roundToNineDecimals(value: number): number {
