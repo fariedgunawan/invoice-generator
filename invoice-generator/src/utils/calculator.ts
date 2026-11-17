@@ -197,7 +197,7 @@ export function validateDatesAndCalculateDuration(state: InvoiceCalculatorState)
   const endDate = parseDateString(state.endDate || '2000-01-01');
   const monthsPerInvoice = MONTHS_PER_INVOICE_MAP[state.billingFrequency] || 1;
   const prorataBasis = PRORATA_BASIS_MAP[state.billingFrequency] || 30;
-  const cycleDay = Number(state.cycleDay) || 0;
+  const cycleDay = state.billingFrequency === 'Monthly' ? Number(state.cycleDay) || 0 : 0;
 
   const isInvalidDateRange = convertDateToSerialDays(startDate) > convertDateToSerialDays(endDate);
 
@@ -205,7 +205,7 @@ export function validateDatesAndCalculateDuration(state: InvoiceCalculatorState)
     warnings.push('Start is after end');
   }
 
-  if (!cycleDay && startDate.day > 28) {
+  if (state.billingFrequency === 'Monthly' && !cycleDay && startDate.day > 28) {
     warnings.push('Start on the 29th-31st without a cycle day: enter a cycle day 1-28');
   }
 
