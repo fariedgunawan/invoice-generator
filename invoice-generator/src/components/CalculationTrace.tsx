@@ -28,7 +28,13 @@ interface CalculationTraceProps {
   onBack: () => void;
 }
 
-type TraceTabId = 'timeline' | 'invoice-step' | 'so-base' | 'schedule' | 'aggregation';
+type TraceTabId =
+  | 'timeline'
+  | 'invoice-breakdown'
+  | 'invoice-step'
+  | 'so-base'
+  | 'schedule'
+  | 'aggregation';
 
 type SummaryMetricKey =
   | 'oneTimeTotal'
@@ -41,6 +47,7 @@ type SummaryMetricKey =
 
 const TRACE_TABS: { id: TraceTabId; label: string }[] = [
   { id: 'timeline', label: 'Simulasi Timeline & Terminate' },
+  { id: 'invoice-breakdown', label: 'Breakdown per Invoice' },
   { id: 'invoice-step', label: 'Trace per Invoice' },
   { id: 'so-base', label: 'Dasar SO' },
   { id: 'schedule', label: 'Jadwal & Prorata' },
@@ -142,6 +149,7 @@ export function CalculationTrace({
   const [activeTab, setActiveTab] = useState<TraceTabId>('timeline');
   const [selectedInvoiceIndex, setSelectedInvoiceIndex] = useState<number>(0);
   const [selectedProductIndex, setSelectedProductIndex] = useState<number>(0);
+  const [breakdownViewMode, setBreakdownViewMode] = useState<'all' | 'single'>('all');
 
   const allItems = calculation.allCalculatedItems;
   const activeItems = calculation.activeCalculatedItems;
@@ -844,6 +852,372 @@ export function CalculationTrace({
           );
         })()}
 
+        {activeTab === 'invoice-breakdown' && (() => {
+          const barShades = [
+            'bg-indigo-600 dark:bg-indigo-500',
+            'bg-indigo-500 dark:bg-indigo-400',
+            'bg-indigo-400 dark:bg-indigo-600',
+            'bg-slate-700 dark:bg-slate-500',
+            'bg-slate-500 dark:bg-slate-400',
+            'bg-indigo-300 dark:bg-indigo-700'
+          ];
+
+          const columnsToRender =
+            breakdownViewMode === 'single' && invoiceColumns[selectedInvoiceIndex]
+              ? [{ column: invoiceColumns[selectedInvoiceIndex], index: selectedInvoiceIndex }]
+              : invoiceColumns.map((column, index) => ({ column, index }));
+
+          return (
+            <div className="space-y-5">
+              <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    Breakdown Hasil Perhitungan per Invoice
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Rincian kontribusi tiap produk, metode perhitungan, pajak, dan grand total pada setiap invoice.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBreakdownViewMode('all')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-colors ${
+                      breakdownViewMode === 'all'
+                        ? 'bg-slate-900 dark:bg-indigo-600 text-white border-slate-900 dark:border-indigo-600'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    Semua Invoice ({invoiceColumns.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBreakdownViewMode('single')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-colors ${
+                      breakdownViewMode === 'single'
+                        ? 'bg-slate-900 dark:bg-indigo-600 text-white border-slate-900 dark:border-indigo-600'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    Pilih 1 Invoice
+                  </button>
+                </div>
+              </div>
+
+              {breakdownViewMode === 'single' && renderInvoiceSelector()}
+
+              <div className="space-y-5">
+                {columnsToRender.map(({ column, index }) => {
+                  const period = column.period;
+                  const isBillActive = column.grandTotal > 0;
+                  const hasRemainderMode = activeItems.some(
+                    item => item.periodRows[index]?.isFullContractRemainderAbsorbed
+                  );
+                  const totalBasicDiscInInvoice = roundToNineDecimals(
+                    activeItems.reduce(
+                      (sum, item) => sum + (item.periodRows[index]?.totalBasicDiscount || 0),
+                      0
+                    )
+                  );
+                  const totalAdditionalDiscInInvoice = roundToNineDecimals(
+                    activeItems.reduce(
+                      (sum, item) => sum + (item.periodRows[index]?.additionalDiscountAmount || 0),
+                      0
+                    )
+                  );
+
+                  const positiveItemsForBar = activeItems
+                    .map((item, itemIdx) => ({
+                      item,
+                      itemIdx,
+                      row: item.periodRows[index]
+                    }))
+                    .filter(entry => entry.row && entry.row.grandTotal > 0);
+
+                  const positiveSum = positiveItemsForBar.reduce(
+                    (sum, entry) => sum + (entry.row?.grandTotal || 0),
+                    0
+                  );
+
+                  return (
+                    <div
+                      key={column.label}
+                      className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden"
+                    >
+                      <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                              {column.label}
+                            </h3>
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                !isBillActive
+                                  ? 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                  : hasRemainderMode
+                                    ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                              }`}
+                            >
+                              {!isBillActive
+                                ? 'Tidak Ditagih (Rp 0)'
+                                : hasRemainderMode
+                                  ? 'Invoice Akhir · Hitung Mundur'
+                                  : period && period.proRataFactor !== 1
+                                    ? 'Prorata'
+                                    : 'Periode Penuh'}
+                            </span>
+                          </div>
+                          {period && (
+                            <p className="text-xs font-mono text-slate-500 dark:text-slate-400">
+                              {formatDateToDisplay(period.startDate)} s/d {formatDateToDisplay(period.endDate)} ·{' '}
+                              {period.days} hari · f = {formatNumberWithNineDecimals(period.proRataFactor)}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-right">
+                          <div className="rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-1.5">
+                            <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              Pre-tax
+                            </div>
+                            <div className="font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
+                              {formatDisplayNumber(column.preTaxTotal)}
+                            </div>
+                          </div>
+                          <div className="rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-1.5">
+                            <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              Pajak ({state.taxRatePercent}%)
+                            </div>
+                            <div className="font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
+                              {formatDisplayNumber(column.taxAmount)}
+                            </div>
+                          </div>
+                          {hasDeductedTax && (
+                            <div className="rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-1.5">
+                              <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                Deducted ({state.deductedTaxRatePercent}%)
+                              </div>
+                              <div className="font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
+                                {formatDisplayNumber(column.deductedTaxAmount)}
+                              </div>
+                            </div>
+                          )}
+                          <div className="rounded-md bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 px-3 py-1.5">
+                            <div className="text-[10px] uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+                              Grand Total
+                            </div>
+                            <div className="font-mono text-xs font-bold text-indigo-900 dark:text-indigo-100">
+                              {formatDisplayNumber(column.grandTotal)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {positiveSum > 0 && (
+                        <div className="px-5 py-3 bg-slate-50/70 dark:bg-slate-950/50 border-b border-slate-200 dark:border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                            <span>Proporsi kontribusi produk terhadap Pre-tax {column.label}</span>
+                            <span className="font-mono">{positiveItemsForBar.length} produk aktif</span>
+                          </div>
+                          <div className="h-3 w-full rounded-md overflow-hidden flex bg-slate-200 dark:bg-slate-800">
+                            {positiveItemsForBar.map((entry, barIdx) => {
+                              const sharePercent = ((entry.row?.grandTotal || 0) / positiveSum) * 100;
+                              return (
+                                <div
+                                  key={entry.item.name + entry.itemIdx}
+                                  style={{ width: `${sharePercent}%` }}
+                                  className={`${barShades[barIdx % barShades.length]} border-r border-white dark:border-slate-900 last:border-r-0`}
+                                  title={`${entry.item.name}: ${formatDisplayNumber(entry.row?.grandTotal)} (${sharePercent.toFixed(1)}%)`}
+                                />
+                              );
+                            })}
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                            {positiveItemsForBar.map((entry, barIdx) => {
+                              const sharePercent = ((entry.row?.grandTotal || 0) / positiveSum) * 100;
+                              return (
+                                <span
+                                  key={entry.item.name + entry.itemIdx}
+                                  className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300"
+                                >
+                                  <span
+                                    className={`h-2 w-2 rounded-xs ${barShades[barIdx % barShades.length]}`}
+                                  />
+                                  <span className="font-medium">{entry.item.name}:</span>
+                                  <span className="font-mono">
+                                    {formatDisplayNumber(entry.row?.grandTotal)} ({sharePercent.toFixed(1)}%)
+                                  </span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left whitespace-nowrap">
+                          <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+                            <tr>
+                              <th className={tableHeaderClass}>Produk</th>
+                              <th className={tableHeaderClass}>Status</th>
+                              <th className={tableHeaderClass}>Tipe</th>
+                              <th className={tableHeaderClass}>Periode Aktif</th>
+                              <th className={`${tableHeaderClass} text-right`}>Qty</th>
+                              <th className={`${tableHeaderClass} text-right`}>Price / Unit</th>
+                              <th className={`${tableHeaderClass} text-right`}>Basic Disc / Unit</th>
+                              <th className={`${tableHeaderClass} text-right`}>Total Basic Disc</th>
+                              <th className={`${tableHeaderClass} text-right`}>Net Price / Unit</th>
+                              <th className={`${tableHeaderClass} text-right`}>Total After Basic</th>
+                              <th className={`${tableHeaderClass} text-right`}>Add Disc</th>
+                              <th className={`${tableHeaderClass} text-right`}>Item Total</th>
+                              <th className={tableHeaderClass}>Metode</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
+                            {activeItems.map((item, itemIdx) => {
+                              const row = item.periodRows[index];
+                              const isRowActive = Boolean(row && row.grandTotal > 0);
+                              const methodLabel = !isRowActive
+                                ? 'Stop (Rp 0)'
+                                : row.isFullContractRemainderAbsorbed
+                                  ? 'Hitung Mundur'
+                                  : item.type !== 'Recurring'
+                                    ? item.type
+                                    : row.isUnitPriceProrated === false
+                                      ? 'Non-Monthly'
+                                      : 'Prorata';
+
+                              return (
+                                <tr
+                                  key={item.name + itemIdx}
+                                  className={!isRowActive ? 'opacity-50' : ''}
+                                >
+                                  <td className={`${tableCellClass} font-medium text-slate-900 dark:text-slate-100`}>
+                                    {item.name || `Product ${itemIdx + 1}`}
+                                  </td>
+                                  <td className={tableCellClass}>
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                                        item.status === 'Terminate'
+                                          ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                                          : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
+                                      }`}
+                                    >
+                                      {item.status}
+                                    </span>
+                                  </td>
+                                  <td className={tableCellClass}>
+                                    {item.type} ({item.unit})
+                                  </td>
+                                  <td className={`${tableCellClass} font-mono text-[11px] text-slate-500 dark:text-slate-400`}>
+                                    {isRowActive && row.activeStartDate && row.activeEndDate
+                                      ? `${formatDateToDisplay(row.activeStartDate)} - ${formatDateToDisplay(row.activeEndDate)} (${row.activeDays} hr)`
+                                      : '0 hari'}
+                                  </td>
+                                  <td className={`${tableCellClass} text-right font-mono`}>{item.quantity}</td>
+                                  <td className={`${tableCellClass} text-right font-mono`}>
+                                    {isRowActive ? formatDisplayNumber(row.unitPrice) : '-'}
+                                  </td>
+                                  <td className={`${tableCellClass} text-right font-mono`}>
+                                    {isRowActive ? formatDisplayNumber(row.basicDiscountPerUnit) : '-'}
+                                  </td>
+                                  <td className={`${tableCellClass} text-right font-mono`}>
+                                    {formatDisplayNumber(row?.totalBasicDiscount || 0)}
+                                  </td>
+                                  <td className={`${tableCellClass} text-right font-mono`}>
+                                    {isRowActive ? formatDisplayNumber(row.netPricePerUnit) : '-'}
+                                  </td>
+                                  <td className={`${tableCellClass} text-right font-mono`}>
+                                    {formatDisplayNumber(row?.totalAfterBasicDiscount || 0)}
+                                  </td>
+                                  <td className={`${tableCellClass} text-right font-mono`}>
+                                    {formatDisplayNumber(row?.additionalDiscountAmount || 0)}
+                                  </td>
+                                  <td className={`${tableCellClass} text-right font-mono font-semibold text-slate-900 dark:text-slate-100`}>
+                                    {formatDisplayNumber(row?.grandTotal || 0)}
+                                  </td>
+                                  <td className={tableCellClass}>
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                                        methodLabel === 'Hitung Mundur'
+                                          ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
+                                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                      }`}
+                                    >
+                                      {methodLabel}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot className="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-700 font-mono text-slate-900 dark:text-slate-100">
+                            <tr className="font-semibold">
+                              <td colSpan={7} className={`${tableCellClass} font-sans`}>
+                                Subtotal Produk ({column.label})
+                              </td>
+                              <td className={`${tableCellClass} text-right`}>
+                                {formatDisplayNumber(totalBasicDiscInInvoice)}
+                              </td>
+                              <td className={tableCellClass} />
+                              <td className={`${tableCellClass} text-right`}>
+                                {formatDisplayNumber(
+                                  activeItems.reduce(
+                                    (sum, item) => sum + (item.periodRows[index]?.totalAfterBasicDiscount || 0),
+                                    0
+                                  )
+                                )}
+                              </td>
+                              <td className={`${tableCellClass} text-right`}>
+                                {formatDisplayNumber(totalAdditionalDiscInInvoice)}
+                              </td>
+                              <td className={`${tableCellClass} text-right`}>
+                                {formatDisplayNumber(column.preTaxTotal)}
+                              </td>
+                              <td className={tableCellClass} />
+                            </tr>
+                            <tr>
+                              <td colSpan={11} className={`${tableCellClass} font-sans text-slate-600 dark:text-slate-400`}>
+                                Taxes and charges ({state.taxRatePercent}%)
+                              </td>
+                              <td className={`${tableCellClass} text-right`}>
+                                {formatDisplayNumber(column.taxAmount)}
+                              </td>
+                              <td className={tableCellClass} />
+                            </tr>
+                            {hasDeductedTax && (
+                              <tr>
+                                <td colSpan={11} className={`${tableCellClass} font-sans text-slate-600 dark:text-slate-400`}>
+                                  Deducted taxes ({state.deductedTaxRatePercent}%)
+                                </td>
+                                <td className={`${tableCellClass} text-right`}>
+                                  -{formatDisplayNumber(column.deductedTaxAmount)}
+                                </td>
+                                <td className={tableCellClass} />
+                              </tr>
+                            )}
+                            <tr className="bg-indigo-50/70 dark:bg-indigo-950/30 font-bold">
+                              <td colSpan={11} className={`${tableCellClass} font-sans text-indigo-900 dark:text-indigo-200`}>
+                                Invoice Grand Total ({column.label})
+                              </td>
+                              <td className={`${tableCellClass} text-right text-indigo-900 dark:text-indigo-200`}>
+                                {formatDisplayNumber(column.grandTotal)}
+                              </td>
+                              <td className={tableCellClass} />
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         {activeTab === 'invoice-step' && (
           <div className="space-y-5">
             {renderInvoiceSelector()}
@@ -1043,25 +1417,31 @@ export function CalculationTrace({
                       stepNumber={4}
                       title="Total basic discount"
                       description={
-                        isRemainderAbsorbed
-                          ? 'Menyerap sisa Total basic discount SO setelah dikurangi akumulasi invoice sebelumnya.'
-                          : selectedPeriodRow.isUnitPriceProrated === false
-                            ? `Diskon dasar satuan dikalikan Qty (${selectedItem.quantity}) dan faktor bulan periode f (${formatNumberWithNineDecimals(proRataFactor)}).`
-                            : `Diskon dasar per unit dikalikan Qty (${selectedItem.quantity}).`
+                        isBackwardUnitProrated
+                          ? `Diskon dasar per unit (hasil hitung mundur) dikalikan Qty (${selectedItem.quantity}).`
+                          : isRemainderAbsorbed
+                            ? 'Menyerap sisa Total basic discount SO setelah dikurangi akumulasi invoice sebelumnya.'
+                            : selectedPeriodRow.isUnitPriceProrated === false
+                              ? `Diskon dasar satuan dikalikan Qty (${selectedItem.quantity}) dan faktor bulan periode f (${formatNumberWithNineDecimals(proRataFactor)}).`
+                              : `Diskon dasar per unit dikalikan Qty (${selectedItem.quantity}).`
                       }
                       formulaRule={
-                        isRemainderAbsorbed
-                          ? 'SO total basic disc − Akumulasi invoice sebelumnya'
-                          : selectedPeriodRow.isUnitPriceProrated === false
-                            ? 'Basic discount per unit × Qty × f'
-                            : 'Basic discount per unit × Qty'
+                        isBackwardUnitProrated
+                          ? 'Basic discount per unit × Qty'
+                          : isRemainderAbsorbed
+                            ? 'SO total basic disc − Akumulasi invoice sebelumnya'
+                            : selectedPeriodRow.isUnitPriceProrated === false
+                              ? 'Basic discount per unit × Qty × f'
+                              : 'Basic discount per unit × Qty'
                       }
                       calculationLines={[
-                        isRemainderAbsorbed
-                          ? `${formatDisplayNumber(selectedItem.totalBasicDiscount)} − ${formatDisplayNumber(previousBasicDiscountSum)} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
-                          : selectedPeriodRow.isUnitPriceProrated === false
-                            ? `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} × ${selectedItem.quantity} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
-                            : `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} × ${selectedItem.quantity} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
+                        isBackwardUnitProrated
+                          ? `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} × ${selectedItem.quantity} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
+                          : isRemainderAbsorbed
+                            ? `${formatDisplayNumber(selectedItem.totalBasicDiscount)} − ${formatDisplayNumber(previousBasicDiscountSum)} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
+                            : selectedPeriodRow.isUnitPriceProrated === false
+                              ? `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} × ${selectedItem.quantity} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
+                              : `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} × ${selectedItem.quantity} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
                       ]}
                       resultValue={formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}
                     />

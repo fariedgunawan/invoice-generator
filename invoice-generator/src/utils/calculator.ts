@@ -681,6 +681,7 @@ export function calculateRecurringPeriodRow(
     let remainderUnitPrice = unitPrice;
     let remainderBasicDiscountPerUnit = basicDiscountPerUnit;
     let remainderNetPricePerUnit = netPricePerUnit;
+    let remainderTotalBasicDiscount = remainingTotalBasicDiscount;
 
     if (shouldProrateUnitPrice && item.quantity > 0) {
       const rawNetPricePerUnit = remainingTotalAfterBasic / item.quantity;
@@ -703,13 +704,18 @@ export function calculateRecurringPeriodRow(
           item.unit
         );
       }
+
+      remainderTotalBasicDiscount = roundByUnitType(
+        remainderBasicDiscountPerUnit * item.quantity,
+        item.unit
+      );
     }
 
     return {
       unitPrice: remainderUnitPrice,
       basicDiscountPerUnit: remainderBasicDiscountPerUnit,
       netPricePerUnit: remainderNetPricePerUnit,
-      totalBasicDiscount: remainingTotalBasicDiscount,
+      totalBasicDiscount: remainderTotalBasicDiscount,
       totalAfterBasicDiscount: remainingTotalAfterBasic,
       additionalDiscountAmount: item.additionalDiscountAmount - cumulativeAdditionalDiscount,
       grandTotal: item.grandTotal - cumulativeGrandTotal,
