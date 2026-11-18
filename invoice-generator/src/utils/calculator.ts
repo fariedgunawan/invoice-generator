@@ -672,17 +672,51 @@ export function calculateRecurringPeriodRow(
     : item.netPricePerUnit;
 
   if (shouldAbsorbFullContractRemainder) {
+    const remainingTotalBasicDiscount = roundByUnitType(
+      item.totalBasicDiscount - cumulativeBasicDiscount,
+      item.unit
+    );
+    const remainingTotalAfterBasic = item.totalAfterBasicDiscount - cumulativeTotalAfterBasic;
+
+    let remainderUnitPrice = unitPrice;
+    let remainderBasicDiscountPerUnit = basicDiscountPerUnit;
+    let remainderNetPricePerUnit = netPricePerUnit;
+
+    if (shouldProrateUnitPrice && item.quantity > 0) {
+      const rawNetPricePerUnit = remainingTotalAfterBasic / item.quantity;
+      remainderNetPricePerUnit = roundByUnitType(rawNetPricePerUnit, item.unit);
+
+      if (item.basicDiscountType === 'Percentage' && item.basicDiscountValue < 100) {
+        remainderUnitPrice = roundByUnitType(
+          rawNetPricePerUnit / (1 - item.basicDiscountValue / 100),
+          item.unit
+        );
+        remainderBasicDiscountPerUnit = roundByUnitType(
+          remainderUnitPrice - remainderNetPricePerUnit,
+          item.unit
+        );
+      } else {
+        const rawBasicDiscountPerUnit = remainingTotalBasicDiscount / item.quantity;
+        remainderBasicDiscountPerUnit = roundByUnitType(rawBasicDiscountPerUnit, item.unit);
+        remainderUnitPrice = roundByUnitType(
+          rawNetPricePerUnit + rawBasicDiscountPerUnit,
+          item.unit
+        );
+      }
+    }
+
     return {
-      unitPrice,
-      basicDiscountPerUnit,
-      netPricePerUnit,
-      totalBasicDiscount: roundByUnitType(item.totalBasicDiscount - cumulativeBasicDiscount, item.unit),
-      totalAfterBasicDiscount: item.totalAfterBasicDiscount - cumulativeTotalAfterBasic,
+      unitPrice: remainderUnitPrice,
+      basicDiscountPerUnit: remainderBasicDiscountPerUnit,
+      netPricePerUnit: remainderNetPricePerUnit,
+      totalBasicDiscount: remainingTotalBasicDiscount,
+      totalAfterBasicDiscount: remainingTotalAfterBasic,
       additionalDiscountAmount: item.additionalDiscountAmount - cumulativeAdditionalDiscount,
       grandTotal: item.grandTotal - cumulativeGrandTotal,
       activeDays,
       proRataFactor: periodProRataFactor,
       isUnitPriceProrated: shouldProrateUnitPrice,
+      isFullContractRemainderAbsorbed: true,
       activeStartDate: periodStartDate,
       activeEndDate,
       isLastActivePeriod

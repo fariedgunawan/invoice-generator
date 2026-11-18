@@ -268,6 +268,9 @@ export function CalculationTrace({
                   <span className={isSelected ? 'text-slate-200' : 'text-slate-500 dark:text-slate-400'}>
                     {' '}
                     · {column.period.days} hari{column.period.proRataFactor !== 1 ? ' (prorata)' : ''}
+                    {activeItems.some(item => item.periodRows[index]?.isFullContractRemainderAbsorbed)
+                      ? ' · Hitung Mundur'
+                      : ''}
                   </span>
                 )}
               </button>
@@ -875,162 +878,274 @@ export function CalculationTrace({
               </div>
             </div>
 
-            {selectedItem && selectedPeriodRow && selectedColumn && (
-              <>
-                <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-5 flex flex-wrap items-center justify-between gap-4">
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                      {selectedItem.name} di {selectedColumn.label}{' '}
-                      <span className="text-xs font-normal px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 ml-2">
-                        Status: {selectedItem.status}
-                        {selectedItem.status === 'Terminate' && selectedItem.terminateDate
-                          ? ` (${selectedItem.terminateDate})`
-                          : ''}
-                      </span>
-                    </h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {selectedPeriodRow.activeStartDate && selectedPeriodRow.activeEndDate
-                        ? `Periode aktif item: ${formatDateToDisplay(selectedPeriodRow.activeStartDate)} s/d ${formatDateToDisplay(selectedPeriodRow.activeEndDate)} (${selectedPeriodRow.activeDays} hari) · faktor prorata f = ${formatNumberWithNineDecimals(proRataFactor)}`
-                        : `Tidak aktif di periode ${formatDateToDisplay(selectedColumn.period!.startDate)} s/d ${formatDateToDisplay(selectedColumn.period!.endDate)} (0 hari) · faktor prorata f = 0`}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs text-slate-500 dark:text-slate-400">Item grand total</div>
-                    <div className="text-xl font-semibold font-mono text-slate-900 dark:text-slate-100">
-                      {formatDisplayNumber(selectedPeriodRow.grandTotal)}
-                    </div>
-                  </div>
-                </div>
+            {selectedItem && selectedPeriodRow && selectedColumn && (() => {
+              const isRemainderAbsorbed = Boolean(selectedPeriodRow.isFullContractRemainderAbsorbed);
+              const isBackwardUnitProrated =
+                isRemainderAbsorbed &&
+                selectedPeriodRow.isUnitPriceProrated !== false &&
+                selectedItem.quantity > 0;
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              const previousRows = selectedItem.periodRows.slice(0, selectedInvoiceIndex);
+              const previousBasicDiscountSum = roundToNineDecimals(
+                previousRows.reduce((sum, row) => sum + row.totalBasicDiscount, 0)
+              );
+              const previousTotalAfterBasicSum = roundToNineDecimals(
+                previousRows.reduce((sum, row) => sum + row.totalAfterBasicDiscount, 0)
+              );
+              const previousAdditionalDiscountSum = roundToNineDecimals(
+                previousRows.reduce((sum, row) => sum + row.additionalDiscountAmount, 0)
+              );
+              const previousGrandTotalSum = roundToNineDecimals(
+                previousRows.reduce((sum, row) => sum + row.grandTotal, 0)
+              );
+              const rawNetPerUnitFromRemainder =
+                selectedItem.quantity > 0
+                  ? selectedPeriodRow.totalAfterBasicDiscount / selectedItem.quantity
+                  : 0;
+
+              return (
+                <>
+                  <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-5 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div>
+                        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex flex-wrap items-center gap-2">
+                          <span>
+                            {selectedItem.name} di {selectedColumn.label}
+                          </span>
+                          <span className="text-xs font-normal px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            Status: {selectedItem.status}
+                            {selectedItem.status === 'Terminate' && selectedItem.terminateDate
+                              ? ` (${selectedItem.terminateDate})`
+                              : ''}
+                          </span>
+                          {isRemainderAbsorbed && (
+                            <span className="text-xs font-medium px-2.5 py-0.5 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                              Invoice Akhir · Hitung Mundur Sisa Kontrak
+                            </span>
+                          )}
+                        </h2>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          {selectedPeriodRow.activeStartDate && selectedPeriodRow.activeEndDate
+                            ? `Periode aktif item: ${formatDateToDisplay(selectedPeriodRow.activeStartDate)} s/d ${formatDateToDisplay(selectedPeriodRow.activeEndDate)} (${selectedPeriodRow.activeDays} hari) · faktor prorata f = ${formatNumberWithNineDecimals(proRataFactor)}`
+                            : `Tidak aktif di periode ${formatDateToDisplay(selectedColumn.period!.startDate)} s/d ${formatDateToDisplay(selectedColumn.period!.endDate)} (0 hari) · faktor prorata f = 0`}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-slate-500 dark:text-slate-400">Item grand total</div>
+                        <div className="text-xl font-semibold font-mono text-slate-900 dark:text-slate-100">
+                          {formatDisplayNumber(selectedPeriodRow.grandTotal)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {isRemainderAbsorbed && (
+                      <div className="rounded-md bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/70 px-3.5 py-2.5 text-xs text-slate-700 dark:text-slate-300">
+                        <span className="font-semibold text-indigo-800 dark:text-indigo-300">
+                          Penyesuaian Invoice Akhir (Hitung Mundur):
+                        </span>{' '}
+                        {isBackwardUnitProrated
+                          ? 'Total pada invoice terakhir mengambil sisa nilai kontrak SO (SO − akumulasi invoice sebelumnya), lalu Net Price/Unit, Basic Discount/Unit, dan Selling Price/Unit dihitung mundur dari sisa Total After Basic tersebut agar konsisten.'
+                          : 'Total pada invoice terakhir mengambil sisa nilai kontrak SO (SO − akumulasi invoice sebelumnya) agar selisih = 0, sementara harga per unit tetap mengikuti harga SO (siklus non-Monthly).'}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <StepCard
+                      stepNumber={1}
+                      title="Price per unit"
+                      description={
+                        isBackwardUnitProrated
+                          ? 'Hitung mundur dari sisa Total after basic (Step 5) agar konsisten dengan sisa kontrak.'
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? 'Frekuensi selain Monthly (tanpa Terminate di tengah periode): harga satuan tetap sama dengan SO.'
+                            : `Harga satuan dikalikan faktor prorata f (${formatNumberWithNineDecimals(proRataFactor)}).`
+                      }
+                      formulaRule={
+                        isBackwardUnitProrated
+                          ? selectedItem.basicDiscountType === 'Percentage'
+                            ? '(Sisa Total after basic ÷ Qty) ÷ (1 − Basic Disc %)'
+                            : '(Sisa Total after basic + Sisa Total basic disc) ÷ Qty'
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? 'Tetap = Price SO'
+                            : 'Price × f'
+                      }
+                      calculationLines={[
+                        isBackwardUnitProrated
+                          ? selectedItem.basicDiscountType === 'Percentage'
+                            ? `(${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)} ÷ ${selectedItem.quantity}) ÷ (1 − ${selectedItem.basicDiscountValue}%) = ${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)}`
+                            : `(${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)} + ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}) ÷ ${selectedItem.quantity} = ${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)}`
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? `${formatDisplayNumber(selectedItem.price)} = ${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)}`
+                            : `${formatDisplayNumber(selectedItem.price)} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)}`
+                      ]}
+                      resultValue={formatDisplayNumber(selectedPeriodRow.unitPrice || 0)}
+                    />
+                    <StepCard
+                      stepNumber={2}
+                      title="Basic discount per unit"
+                      description={
+                        isBackwardUnitProrated
+                          ? 'Hitung mundur dari selisih Price per unit dan Net price per unit (atau sisa Total basic disc ÷ Qty).'
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? 'Frekuensi selain Monthly (tanpa Terminate di tengah periode): diskon dasar satuan tetap sama dengan SO.'
+                            : `Diskon dasar per unit (${
+                                selectedItem.basicDiscountType === 'Percentage'
+                                  ? `${selectedItem.basicDiscountValue}%`
+                                  : `nominal ${selectedItem.basicDiscountValue}`
+                              }).`
+                      }
+                      formulaRule={
+                        isBackwardUnitProrated
+                          ? selectedItem.basicDiscountType === 'Percentage'
+                            ? 'Price per unit − Net price per unit'
+                            : 'Sisa Total basic discount ÷ Qty'
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? 'Tetap = Basic discount / unit SO'
+                            : selectedItem.basicDiscountType === 'Percentage'
+                              ? 'Price per unit × %'
+                              : 'Basic discount × f'
+                      }
+                      calculationLines={[
+                        isBackwardUnitProrated
+                          ? selectedItem.basicDiscountType === 'Percentage'
+                            ? `${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)} − ${formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)} = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}`
+                            : `${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)} ÷ ${selectedItem.quantity} = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}`
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? `${formatDisplayNumber(selectedItem.basicDiscountPerUnit)} = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}`
+                            : selectedItem.basicDiscountType === 'Percentage'
+                              ? `${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)} × ${selectedItem.basicDiscountValue}% = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}`
+                              : `${formatDisplayNumber(selectedItem.basicDiscountPerUnit)} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}`
+                      ]}
+                      resultValue={formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}
+                    />
+                    <StepCard
+                      stepNumber={3}
+                      title="Net price per unit"
+                      description={
+                        isBackwardUnitProrated
+                          ? 'Hitung mundur: sisa Total after basic dibagi Qty.'
+                          : 'Harga satuan dikurangi diskon dasar satuan.'
+                      }
+                      formulaRule={
+                        isBackwardUnitProrated
+                          ? 'Sisa Total after basic ÷ Qty'
+                          : 'Price per unit − Basic discount per unit'
+                      }
+                      calculationLines={[
+                        isBackwardUnitProrated
+                          ? `${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)} ÷ ${selectedItem.quantity} = ${rawNetPerUnitFromRemainder.toFixed(6)} → ${formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)}`
+                          : `${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)} − ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} = ${formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)}`
+                      ]}
+                      resultValue={formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)}
+                    />
+                    <StepCard
+                      stepNumber={4}
+                      title="Total basic discount"
+                      description={
+                        isRemainderAbsorbed
+                          ? 'Menyerap sisa Total basic discount SO setelah dikurangi akumulasi invoice sebelumnya.'
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? `Diskon dasar satuan dikalikan Qty (${selectedItem.quantity}) dan faktor bulan periode f (${formatNumberWithNineDecimals(proRataFactor)}).`
+                            : `Diskon dasar per unit dikalikan Qty (${selectedItem.quantity}).`
+                      }
+                      formulaRule={
+                        isRemainderAbsorbed
+                          ? 'SO total basic disc − Akumulasi invoice sebelumnya'
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? 'Basic discount per unit × Qty × f'
+                            : 'Basic discount per unit × Qty'
+                      }
+                      calculationLines={[
+                        isRemainderAbsorbed
+                          ? `${formatDisplayNumber(selectedItem.totalBasicDiscount)} − ${formatDisplayNumber(previousBasicDiscountSum)} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} × ${selectedItem.quantity} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
+                            : `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} × ${selectedItem.quantity} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
+                      ]}
+                      resultValue={formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}
+                    />
+                    <StepCard
+                      stepNumber={5}
+                      title="Total after basic"
+                      description={
+                        isRemainderAbsorbed
+                          ? 'Menyerap sisa Total after basic SO agar akumulasi seluruh invoice tepat sama dengan SO.'
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? `Net price per unit dikalikan Qty (${selectedItem.quantity}) dan faktor bulan periode f (${formatNumberWithNineDecimals(proRataFactor)}), lalu dibulatkan.`
+                            : 'Net price per unit dikalikan Qty, lalu dibulatkan ke bilangan bulat.'
+                      }
+                      formulaRule={
+                        isRemainderAbsorbed
+                          ? 'SO total after basic − Akumulasi invoice sebelumnya'
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? 'Round(Net price per unit × Qty × f)'
+                            : 'Round(Net price per unit × Qty)'
+                      }
+                      calculationLines={
+                        isRemainderAbsorbed
+                          ? [
+                              `${formatDisplayNumber(selectedItem.totalAfterBasicDiscount)} − ${formatDisplayNumber(previousTotalAfterBasicSum)} = ${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)}`
+                            ]
+                          : selectedPeriodRow.isUnitPriceProrated === false
+                            ? [
+                                `${formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)} × ${selectedItem.quantity} × ${formatNumberWithNineDecimals(proRataFactor)} = ${(Number(selectedPeriodRow.netPricePerUnit || 0) * selectedItem.quantity * proRataFactor).toFixed(2)}`,
+                                `Round(${(Number(selectedPeriodRow.netPricePerUnit || 0) * selectedItem.quantity * proRataFactor).toFixed(2)}) = ${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)}`
+                              ]
+                            : [
+                                `${formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)} × ${selectedItem.quantity} = ${(Number(selectedPeriodRow.netPricePerUnit || 0) * selectedItem.quantity).toFixed(2)}`,
+                                `Round(${(Number(selectedPeriodRow.netPricePerUnit || 0) * selectedItem.quantity).toFixed(2)}) = ${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)}`
+                              ]
+                      }
+                      resultValue={formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)}
+                      isHighlighted
+                    />
+                    <StepCard
+                      stepNumber={6}
+                      title="Additional discount"
+                      description={
+                        isRemainderAbsorbed
+                          ? 'Menyerap sisa Additional discount SO setelah dikurangi akumulasi invoice sebelumnya.'
+                          : `Diskon tambahan kontrak (${formatDisplayNumber(selectedItem.additionalDiscountAmount)}) dibagi rata sesuai durasi dan faktor prorata.`
+                      }
+                      formulaRule={
+                        isRemainderAbsorbed
+                          ? 'SO additional discount − Akumulasi invoice sebelumnya'
+                          : 'Round(SO additional discount × f ÷ durasi)'
+                      }
+                      calculationLines={[
+                        isRemainderAbsorbed
+                          ? `${formatDisplayNumber(selectedItem.additionalDiscountAmount)} − ${formatDisplayNumber(previousAdditionalDiscountSum)} = ${formatDisplayNumber(selectedPeriodRow.additionalDiscountAmount)}`
+                          : `${formatDisplayNumber(selectedItem.additionalDiscountAmount)} × ${formatNumberWithNineDecimals(proRataFactor)} ÷ ${selectedItem.duration} = ${formatDisplayNumber(selectedPeriodRow.additionalDiscountAmount)}`
+                      ]}
+                      resultValue={formatDisplayNumber(selectedPeriodRow.additionalDiscountAmount)}
+                    />
+                  </div>
+
                   <StepCard
-                    stepNumber={1}
-                    title="Price per unit"
+                    stepNumber={7}
+                    title={`Item grand total di ${selectedColumn.label}`}
                     description={
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? 'Frekuensi selain Monthly (tanpa Terminate di tengah periode): harga satuan tetap sama dengan SO.'
-                        : `Harga satuan dikalikan faktor prorata f (${formatNumberWithNineDecimals(proRataFactor)}).`
+                      isRemainderAbsorbed
+                        ? 'Menyerap sisa Grand total SO setelah dikurangi akumulasi invoice sebelumnya (selisih = 0).'
+                        : `Nilai bersih produk ini yang masuk ke pre-tax ${selectedColumn.label}.`
                     }
                     formulaRule={
-                      selectedPeriodRow.isUnitPriceProrated === false ? 'Tetap = Price SO' : 'Price × f'
+                      isRemainderAbsorbed
+                        ? 'SO grand total − Akumulasi invoice sebelumnya'
+                        : 'Total after basic − Additional discount'
                     }
                     calculationLines={[
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? `${formatDisplayNumber(selectedItem.price)} = ${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)}`
-                        : `${formatDisplayNumber(selectedItem.price)} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)}`
+                      isRemainderAbsorbed
+                        ? `${formatDisplayNumber(selectedItem.grandTotal)} − ${formatDisplayNumber(previousGrandTotalSum)} = ${formatDisplayNumber(selectedPeriodRow.grandTotal)}`
+                        : `${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)} − ${formatDisplayNumber(selectedPeriodRow.additionalDiscountAmount)} = ${formatDisplayNumber(selectedPeriodRow.grandTotal)}`
                     ]}
-                    resultValue={formatDisplayNumber(selectedPeriodRow.unitPrice || 0)}
-                  />
-                  <StepCard
-                    stepNumber={2}
-                    title="Basic discount per unit"
-                    description={
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? 'Frekuensi selain Monthly (tanpa Terminate di tengah periode): diskon dasar satuan tetap sama dengan SO.'
-                        : `Diskon dasar per unit (${
-                            selectedItem.basicDiscountType === 'Percentage'
-                              ? `${selectedItem.basicDiscountValue}%`
-                              : `nominal ${selectedItem.basicDiscountValue}`
-                          }).`
-                    }
-                    formulaRule={
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? 'Tetap = Basic discount / unit SO'
-                        : selectedItem.basicDiscountType === 'Percentage'
-                          ? 'Price per unit × %'
-                          : 'Basic discount × f'
-                    }
-                    calculationLines={[
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? `${formatDisplayNumber(selectedItem.basicDiscountPerUnit)} = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}`
-                        : selectedItem.basicDiscountType === 'Percentage'
-                          ? `${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)} × ${selectedItem.basicDiscountValue}% = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}`
-                          : `${formatDisplayNumber(selectedItem.basicDiscountPerUnit)} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}`
-                    ]}
-                    resultValue={formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)}
-                  />
-                  <StepCard
-                    stepNumber={3}
-                    title="Net price per unit"
-                    description="Harga satuan dikurangi diskon dasar satuan."
-                    formulaRule="Price per unit − Basic discount per unit"
-                    calculationLines={[
-                      `${formatDisplayNumber(selectedPeriodRow.unitPrice || 0)} − ${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} = ${formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)}`
-                    ]}
-                    resultValue={formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)}
-                  />
-                  <StepCard
-                    stepNumber={4}
-                    title="Total basic discount"
-                    description={
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? `Diskon dasar satuan dikalikan Qty (${selectedItem.quantity}) dan faktor bulan periode f (${formatNumberWithNineDecimals(proRataFactor)}).`
-                        : `Diskon dasar per unit dikalikan Qty (${selectedItem.quantity}).`
-                    }
-                    formulaRule={
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? 'Basic discount per unit × Qty × f'
-                        : 'Basic discount per unit × Qty'
-                    }
-                    calculationLines={[
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} × ${selectedItem.quantity} × ${formatNumberWithNineDecimals(proRataFactor)} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
-                        : `${formatDisplayNumber(selectedPeriodRow.basicDiscountPerUnit || 0)} × ${selectedItem.quantity} = ${formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}`
-                    ]}
-                    resultValue={formatDisplayNumber(selectedPeriodRow.totalBasicDiscount)}
-                  />
-                  <StepCard
-                    stepNumber={5}
-                    title="Total after basic"
-                    description={
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? `Net price per unit dikalikan Qty (${selectedItem.quantity}) dan faktor bulan periode f (${formatNumberWithNineDecimals(proRataFactor)}), lalu dibulatkan.`
-                        : 'Net price per unit dikalikan Qty, lalu dibulatkan ke bilangan bulat.'
-                    }
-                    formulaRule={
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? 'Round(Net price per unit × Qty × f)'
-                        : 'Round(Net price per unit × Qty)'
-                    }
-                    calculationLines={
-                      selectedPeriodRow.isUnitPriceProrated === false
-                        ? [
-                            `${formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)} × ${selectedItem.quantity} × ${formatNumberWithNineDecimals(proRataFactor)} = ${(Number(selectedPeriodRow.netPricePerUnit || 0) * selectedItem.quantity * proRataFactor).toFixed(2)}`,
-                            `Round(${(Number(selectedPeriodRow.netPricePerUnit || 0) * selectedItem.quantity * proRataFactor).toFixed(2)}) = ${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)}`
-                          ]
-                        : [
-                            `${formatDisplayNumber(selectedPeriodRow.netPricePerUnit || 0)} × ${selectedItem.quantity} = ${(Number(selectedPeriodRow.netPricePerUnit || 0) * selectedItem.quantity).toFixed(2)}`,
-                            `Round(${(Number(selectedPeriodRow.netPricePerUnit || 0) * selectedItem.quantity).toFixed(2)}) = ${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)}`
-                          ]
-                    }
-                    resultValue={formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)}
+                    resultValue={formatDisplayNumber(selectedPeriodRow.grandTotal)}
                     isHighlighted
                   />
-                  <StepCard
-                    stepNumber={6}
-                    title="Additional discount"
-                    description={`Diskon tambahan kontrak (${formatDisplayNumber(selectedItem.additionalDiscountAmount)}) dibagi rata sesuai durasi dan faktor prorata.`}
-                    formulaRule="Round(SO additional discount × f ÷ durasi)"
-                    calculationLines={[
-                      `${formatDisplayNumber(selectedItem.additionalDiscountAmount)} × ${formatNumberWithNineDecimals(proRataFactor)} ÷ ${selectedItem.duration} = ${formatDisplayNumber(selectedPeriodRow.additionalDiscountAmount)}`
-                    ]}
-                    resultValue={formatDisplayNumber(selectedPeriodRow.additionalDiscountAmount)}
-                  />
-                </div>
-
-                <StepCard
-                  stepNumber={7}
-                  title={`Item grand total di ${selectedColumn.label}`}
-                  description={`Nilai bersih produk ini yang masuk ke pre-tax ${selectedColumn.label}.`}
-                  formulaRule="Total after basic − Additional discount"
-                  calculationLines={[
-                    `${formatDisplayNumber(selectedPeriodRow.totalAfterBasicDiscount)} − ${formatDisplayNumber(selectedPeriodRow.additionalDiscountAmount)} = ${formatDisplayNumber(selectedPeriodRow.grandTotal)}`
-                  ]}
-                  resultValue={formatDisplayNumber(selectedPeriodRow.grandTotal)}
-                  isHighlighted
-                />
-              </>
-            )}
+                </>
+              );
+            })()}
           </div>
         )}
 

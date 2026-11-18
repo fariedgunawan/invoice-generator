@@ -61,6 +61,7 @@ export interface CalculatedProductPeriodRow {
   activeDays: number;
   proRataFactor: number;
   isUnitPriceProrated?: boolean;
+  isFullContractRemainderAbsorbed?: boolean;
   activeStartDate?: DateObject;
   activeEndDate?: DateObject;
   isLastActivePeriod?: boolean;
