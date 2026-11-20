@@ -385,10 +385,9 @@ export function calculateBasicDiscountPerUnit(
 
 export function calculateNetPricePerUnit(
   pricePerUnit: number,
-  basicDiscountPerUnit: number,
-  unit: UnitType
+  basicDiscountPerUnit: number
 ): number {
-  return roundByUnitType(pricePerUnit - basicDiscountPerUnit, unit);
+  return roundToInteger(pricePerUnit - basicDiscountPerUnit);
 }
 
 export function calculateTotalBasicDiscount(
@@ -406,7 +405,8 @@ export function calculateTotalAfterBasicDiscount(
   quantity: number,
   duration: number
 ): number {
-  return roundToInteger((pricePerUnit - basicDiscountPerUnit) * quantity * duration);
+  const netPricePerUnit = calculateNetPricePerUnit(pricePerUnit, basicDiscountPerUnit);
+  return roundToInteger(netPricePerUnit * quantity * duration);
 }
 
 export function calculateAdditionalDiscountAmount(
@@ -490,7 +490,7 @@ export function calculateSingleProductMetrics(
   const quantity = Number(rawItem.quantity) || 0;
   const duration = calculateProductContractDuration(rawItem, recurringDurationMonths);
   const basicDiscountPerUnit = calculateBasicDiscountPerUnit(price, basicDiscountType, basicDiscountValue, unit);
-  const netPricePerUnit = calculateNetPricePerUnit(price, basicDiscountPerUnit, unit);
+  const netPricePerUnit = calculateNetPricePerUnit(price, basicDiscountPerUnit);
   const totalBasicDiscount = calculateTotalBasicDiscount(basicDiscountPerUnit, quantity, duration, unit);
   const totalAfterBasicDiscount = calculateTotalAfterBasicDiscount(price, basicDiscountPerUnit, quantity, duration);
   const additionalDiscountAmount = calculateAdditionalDiscountAmount(
@@ -668,7 +668,7 @@ export function calculateRecurringPeriodRow(
     : item.basicDiscountPerUnit;
 
   const netPricePerUnit = shouldProrateUnitPrice
-    ? roundByUnitType(unitPrice - basicDiscountPerUnit, item.unit)
+    ? roundToInteger(unitPrice - basicDiscountPerUnit)
     : item.netPricePerUnit;
 
   if (shouldAbsorbFullContractRemainder) {
@@ -685,7 +685,7 @@ export function calculateRecurringPeriodRow(
 
     if (shouldProrateUnitPrice && item.quantity > 0) {
       const rawNetPricePerUnit = remainingTotalAfterBasic / item.quantity;
-      remainderNetPricePerUnit = roundByUnitType(rawNetPricePerUnit, item.unit);
+      remainderNetPricePerUnit = roundToInteger(rawNetPricePerUnit);
 
       if (item.basicDiscountType === 'Percentage' && item.basicDiscountValue < 100) {
         remainderUnitPrice = roundByUnitType(
